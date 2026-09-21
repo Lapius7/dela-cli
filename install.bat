@@ -26,6 +26,11 @@ if errorlevel 1 (
     echo        "OpenSSH Client" optional feature in Settings if missing.
 )
 
+rem GOPROXY (default proxy.golang.org) can cache the @latest resolution for
+rem an untagged branch, so it can keep returning an old commit for a while
+rem after a push. Use direct so it always fetches straight from GitHub.
+set GOPROXY=direct
+
 echo [..] Downloading and building dela
 go install github.com/lapius7/dela-cli/cli/cmd/dela@latest
 if errorlevel 1 (
