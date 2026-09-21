@@ -24,7 +24,7 @@ type spinner struct {
 	wg       sync.WaitGroup
 }
 
-var spinnerFrames = []string{"⠠⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func newSpinner(label string) *spinner {
 	return &spinner{label: label}
