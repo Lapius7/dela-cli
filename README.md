@@ -42,7 +42,19 @@ curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.sh | 
 irm https://raw.githubusercontent.com/lapius7/dela-cli/main/install.ps1 | iex
 ```
 
-どちらも内部的に`go install github.com/lapius7/dela-cli/cli/cmd/dela@latest`を実行し、
+### Windows(コマンドプロンプト / cmd)
+
+cmdは`irm`/`iex`のようなワンライナー実行に対応していないため、一度ファイルとして保存してから実行する:
+
+```bat
+curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.bat -o install.bat && install.bat
+```
+
+(PowerShellが使える環境では、上のPowerShell版の方が手順が短い)
+
+---
+
+どれも内部的に`go install github.com/lapius7/dela-cli/cli/cmd/dela@latest`を実行し、
 `$(go env GOPATH)/bin`(Windowsは`%GOPATH%\bin`)に`dela`(Windowsは`dela.exe`)を配置する。
 このディレクトリにPATHが通っていない場合は、インストーラーが警告を表示するので指示に従うこと。
 
