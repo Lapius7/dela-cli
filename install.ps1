@@ -22,6 +22,10 @@ if (-not $ssh) {
 }
 
 Write-Host "→ dela をダウンロード・ビルド中 ($Pkg@latest)" -ForegroundColor Cyan
+# GOPROXY(既定はproxy.golang.org)は、タグの無いブランチの@latest解決結果を
+# キャッシュすることがあり、更新してもしばらく古いコミットが返ることがある。
+# directにしてGitHubから直接取得させ、常に最新のコミットを使う。
+$env:GOPROXY = "direct"
 & go install "$Pkg@latest"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "✗ インストールに失敗しました" -ForegroundColor Red
