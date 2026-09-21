@@ -74,8 +74,19 @@ Ctrl+C でトンネルを終了します(URLも即座に無効になります)�
 
 var (
 	urlLineRe = regexp.MustCompile(`https://[a-z0-9]+\.` + regexp.QuoteMeta(tunnelHost))
-	ansiRe    = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	// sishは色付け(SGR)だけでなく、カーソル移動・行クリア等のCSIシーケンスも送ってくる。
+	// 'm'終わりの色コードだけを消していたため、それ以外の制御コードが生のまま端末に
+	// 渡ってテキストの位置がずれる不具合があった。CSI全般([0-9;]*の後に英字1文字で終わる
+	// シーケンス)を丸ごと除去する。
+	ansiCSIRe = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
 )
+
+// 端末制御コード(色・カーソル移動・復帰)を取り除き、表示に使える平文だけを残す
+func sanitize(s string) string {
+	s = ansiCSIRe.ReplaceAllString(s, "")
+	s = strings.ReplaceAll(s, "\r", "")
+	return s
+}
 
 func run(target string) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -111,7 +122,7 @@ func run(target string) {
 	printed := false
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		line := ansiRe.ReplaceAllString(scanner.Text(), "")
+		line := sanitize(scanner.Text())
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
