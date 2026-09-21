@@ -39,7 +39,17 @@ func main() {
 	case "-h", "--help", "help":
 		printUsage()
 		return
+	case "list":
+		cmdList()
+		return
+	case "stop":
+		cmdStop(os.Args[2:])
+		return
+	case "version", "-V":
+		cmdVersion()
+		return
 	}
+
 	verbose := false
 	args := os.Args[1:]
 	filtered := args[:0]
@@ -83,6 +93,12 @@ func printUsage() {
   %s   例: dela 127.0.0.1:8080
   %s          接続の生ログも表示する
 
+%s
+  %s              このPCから起動中のトンネル一覧を表示する
+  %s     PIDを指定してトンネルを停止する
+  %s          すべてのトンネルを停止する
+  %s           バージョンを表示する
+
 実行するとランダムなサブドメインのURLが発行され、外部からアクセスできるようになります。
 Ctrl+C でトンネルを終了します(URLも即座に無効になります)。
 
@@ -97,6 +113,11 @@ Ctrl+C でトンネルを終了します(URLも即座に無効になります)�
 		cyan("dela <port>"),
 		cyan("dela <host:port>"),
 		cyan("-v, --verbose"),
+		bold("管理コマンド:"),
+		cyan("dela list"),
+		cyan("dela stop <PID>"),
+		cyan("dela stop --all"),
+		cyan("dela version"),
 		bold("事前準備:"),
 		yellow(hostKeyFingerprint),
 	))
@@ -126,7 +147,9 @@ func run(target string, verbose bool) {
 	signal.Notify(sigCh, os.Interrupt)
 	go func() {
 		<-sigCh
-		out("\n" + green("✓") + " 終了しました。トンネルは無効になりました。\n")
+		// ここでは表示を行わない。メッセージはrun()側で、実際にssh側の後始末
+		// (プロセス終了・パイプクローズ)が終わったあとにまとめて1回だけ出す
+		// (ここで即座に出すと、メインループ側の出力と混ざって順序が乱れるため)。
 		cancel()
 	}()
 
@@ -165,6 +188,7 @@ func run(target string, verbose bool) {
 		if m := urlLineRe.FindString(line); m != "" && !printed {
 			sp.stop()
 			printBanner(m, target)
+			registerTunnel(m, target)
 			printed = true
 			continue
 		}
@@ -181,9 +205,13 @@ func run(target string, verbose bool) {
 		out(dim(line) + "\n")
 	}
 	sp.stop()
+	if printed {
+		unregisterTunnel()
+	}
 
 	err = cmd.Wait()
 	if ctx.Err() == context.Canceled {
+		printShutdown(printed)
 		return
 	}
 	if err != nil {
@@ -197,8 +225,17 @@ func printBanner(url, target string) {
 		green("✓"), bold("トンネルを確立しました"),
 		"🔗", bold(cyan(url)),
 		dim("→"), dim(target),
-		dim("Ctrl+C で終了"),
+		dim("Ctrl+C で終了 · 他のターミナルからは dela list / dela stop で確認・停止できます"),
 	))
+}
+
+// Ctrl+C(SIGINT)で終了した際の確定メッセージ。トンネルが確立済みだったかどうかで文言を変える。
+func printShutdown(hadTunnel bool) {
+	if hadTunnel {
+		out(fmt.Sprintf("  %s %s\n\n", green("✓"), "終了しました。トンネルは無効になりました。"))
+		return
+	}
+	out(fmt.Sprintf("  %s %s\n\n", yellow("!"), "接続を中止しました。"))
 }
 
 func fail(err error) {
