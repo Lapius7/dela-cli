@@ -23,6 +23,13 @@ const (
 	hostKeyFingerprint = "SHA256:TFfR22+f3m4Fpp/5u3svHfC95Srtq+OyhWqylM8ioGc"
 )
 
+// fmt.Println等が書く素の"\n"だけだと、環境によって(特にWindowsの一部の端末)
+// カーソルが行頭に戻らず、行を追うごとに右へずれていく表示崩れが起きる。
+// このプログラム自身が出す文字列は必ずこれを通し、"\r\n"で改行する。
+func out(s string) {
+	fmt.Print(strings.ReplaceAll(s, "\n", "\r\n"))
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -55,7 +62,7 @@ func resolveTarget(arg string) (string, error) {
 }
 
 func printUsage() {
-	fmt.Printf(`%s — ローカルのポートを https://xxxx.deploy.lapius7.com として即座に公開する
+	out(fmt.Sprintf(`%s — ローカルのポートを https://xxxx.deploy.lapius7.com として即座に公開する
 
 使い方:
   dela <port>        例: dela 3000        (localhost:3000 を公開)
@@ -69,7 +76,7 @@ Ctrl+C でトンネルを終了します(URLも即座に無効になります)�
   - 接続にはあらかじめ登録した公開鍵が必要です(未登録の場合は接続を拒否されます)。
   - 初回接続時、ホスト鍵の確認が出ます。フィンガープリントが次と一致することを確認してください:
       %s
-`, "dela (deplapius)", hostKeyFingerprint)
+`, "dela (deplapius)", hostKeyFingerprint))
 }
 
 var (
@@ -96,7 +103,7 @@ func run(target string) {
 	signal.Notify(sigCh, os.Interrupt)
 	go func() {
 		<-sigCh
-		fmt.Println("\n終了しています…")
+		out("\n終了しています…\n")
 		cancel()
 	}()
 
@@ -127,11 +134,11 @@ func run(target string) {
 			continue
 		}
 		if m := urlLineRe.FindString(line); m != "" && !printed {
-			fmt.Printf("\n🔗 %s\n   → %s へ転送中\n   (Ctrl+C で終了)\n\n", m, target)
+			out(fmt.Sprintf("\n🔗 %s\n   → %s へ転送中\n   (Ctrl+C で終了)\n\n", m, target))
 			printed = true
 			continue
 		}
-		fmt.Println(line)
+		out(line + "\n")
 	}
 
 	err = cmd.Wait()
