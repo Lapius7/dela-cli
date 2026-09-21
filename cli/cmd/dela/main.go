@@ -40,11 +40,25 @@ func main() {
 		printUsage()
 		return
 	}
-	target, err := resolveTarget(os.Args[1])
+	verbose := false
+	args := os.Args[1:]
+	filtered := args[:0]
+	for _, a := range args {
+		if a == "-v" || a == "--verbose" {
+			verbose = true
+			continue
+		}
+		filtered = append(filtered, a)
+	}
+	if len(filtered) < 1 {
+		printUsage()
+		os.Exit(2)
+	}
+	target, err := resolveTarget(filtered[0])
 	if err != nil {
 		fail(err)
 	}
-	run(target)
+	run(target, verbose)
 }
 
 // "3000" のようなポート番号だけの指定は localhost:3000 として扱う。
@@ -62,40 +76,49 @@ func resolveTarget(arg string) (string, error) {
 }
 
 func printUsage() {
-	out(fmt.Sprintf(`%s — ローカルのポートを https://xxxx.deploy.lapius7.com として即座に公開する
+	out(fmt.Sprintf(`%s %s
 
-使い方:
-  dela <port>        例: dela 3000        (localhost:3000 を公開)
-  dela <host:port>   例: dela 127.0.0.1:8080
+%s
+  %s        例: dela 3000        (localhost:3000 を公開)
+  %s   例: dela 127.0.0.1:8080
+  %s          接続の生ログも表示する
 
 実行するとランダムなサブドメインのURLが発行され、外部からアクセスできるようになります。
 Ctrl+C でトンネルを終了します(URLも即座に無効になります)。
 
-事前準備:
+%s
   - システムに ssh コマンドが必要です(Windows 10/11・macOS・Linuxに標準搭載)。
   - 接続にはあらかじめ登録した公開鍵が必要です(未登録の場合は接続を拒否されます)。
   - 初回接続時、ホスト鍵の確認が出ます。フィンガープリントが次と一致することを確認してください:
       %s
-`, "dela (deplapius)", hostKeyFingerprint))
+`,
+		bold("dela"), dim("(deplapius) — ローカルのポートを https://xxxx.deploy.lapius7.com として即座に公開する"),
+		bold("使い方:"),
+		cyan("dela <port>"),
+		cyan("dela <host:port>"),
+		cyan("-v, --verbose"),
+		bold("事前準備:"),
+		yellow(hostKeyFingerprint),
+	))
 }
 
 var (
 	urlLineRe = regexp.MustCompile(`https://[a-z0-9]+\.` + regexp.QuoteMeta(tunnelHost))
 	// sishは色付け(SGR)だけでなく、カーソル移動・行クリア等のCSIシーケンスも送ってくる。
-	// 'm'終わりの色コードだけを消していたため、それ以外の制御コードが生のまま端末に
-	// 渡ってテキストの位置がずれる不具合があった。CSI全般([0-9;]*の後に英字1文字で終わる
-	// シーケンス)を丸ごと除去する。
+	// CSI全般([0-9;]*の後に英字1文字で終わるシーケンス)を丸ごと除去する。
 	ansiCSIRe = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
+	// sish接続時の定型的な前置きメッセージ。verboseでなければ表示しない(ノイズなので)。
+	noisyLineRe = regexp.MustCompile(`^(Press Ctrl-C to close the session\.|The subdomain .* is unavailable\. Assigning a random subdomain\.|Starting SSH Forwarding service for .*)$`)
 )
 
 // 端末制御コード(色・カーソル移動・復帰)を取り除き、表示に使える平文だけを残す
 func sanitize(s string) string {
 	s = ansiCSIRe.ReplaceAllString(s, "")
 	s = strings.ReplaceAll(s, "\r", "")
-	return s
+	return strings.TrimSpace(s)
 }
 
-func run(target string) {
+func run(target string, verbose bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -103,7 +126,7 @@ func run(target string) {
 	signal.Notify(sigCh, os.Interrupt)
 	go func() {
 		<-sigCh
-		out("\n終了しています…\n")
+		out("\n" + green("✓") + " 終了しました。トンネルは無効になりました。\n")
 		cancel()
 	}()
 
@@ -122,7 +145,13 @@ func run(target string) {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
+	out(dim("dela · "+tunnelHost) + "\n\n")
+
+	sp := newSpinner("接続中")
+	sp.start()
+
 	if err := cmd.Start(); err != nil {
+		sp.stop()
 		fail(fmt.Errorf("sshの起動に失敗しました(sshコマンドがPATHに無い可能性があります): %w", err))
 	}
 
@@ -130,16 +159,28 @@ func run(target string) {
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := sanitize(scanner.Text())
-		if strings.TrimSpace(line) == "" {
+		if line == "" {
 			continue
 		}
 		if m := urlLineRe.FindString(line); m != "" && !printed {
-			out(fmt.Sprintf("\n🔗 %s\n   → %s へ転送中\n   (Ctrl+C で終了)\n\n", m, target))
+			sp.stop()
+			printBanner(m, target)
 			printed = true
 			continue
 		}
-		out(line + "\n")
+		if !verbose && noisyLineRe.MatchString(line) {
+			continue
+		}
+		if !printed {
+			// URL判明前の想定外の行は、接続時の問題を見逃さないようスピナーを止めて出す
+			sp.stop()
+			out(dim(line) + "\n")
+			sp.start()
+			continue
+		}
+		out(dim(line) + "\n")
 	}
+	sp.stop()
 
 	err = cmd.Wait()
 	if ctx.Err() == context.Canceled {
@@ -150,7 +191,17 @@ func run(target string) {
 	}
 }
 
+func printBanner(url, target string) {
+	out(fmt.Sprintf(
+		"  %s %s\n\n    %s  %s\n        %s %s\n\n  %s\n\n",
+		green("✓"), bold("トンネルを確立しました"),
+		"🔗", bold(cyan(url)),
+		dim("→"), dim(target),
+		dim("Ctrl+C で終了"),
+	))
+}
+
 func fail(err error) {
-	fmt.Fprintln(os.Stderr, "エラー:", err)
+	fmt.Fprintln(os.Stderr, red("エラー:"), err)
 	os.Exit(1)
 }
