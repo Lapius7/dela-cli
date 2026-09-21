@@ -6,6 +6,10 @@
 set -euo pipefail
 
 PKG="github.com/lapius7/dela-cli/cli/cmd/dela"
+# GOPROXY(既定はproxy.golang.org)は、タグの無いブランチの@latest解決結果を
+# キャッシュすることがあり、更新してもしばらく古いコミットが返ることがある。
+# directにしてGitHubから直接取得させ、常に最新のコミットを使う。
+export GOPROXY=direct
 
 if [ -t 1 ]; then
   BOLD=$'\033[1m'; DIM=$'\033[2m'; RESET=$'\033[0m'
