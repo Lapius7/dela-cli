@@ -2,10 +2,11 @@
 setlocal enabledelayedexpansion
 rem dela (deplapius) CLI installer for Windows CMD
 rem
-rem   curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.bat -o install.bat && install.bat
+rem   curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.bat -o install.bat ^&^& install.bat
 rem
-rem (CMDはirm/iexのようなワンライナー実行に対応していないため、一度ファイルとして
-rem  保存してから実行する。PowerShellが使える場合はinstall.ps1の方が手順が短い)
+rem (cmd does not support one-liner piping like PowerShell's irm/iex, so this
+rem  script is downloaded to a file first, then run. If PowerShell is
+rem  available, install.ps1 is a shorter one-liner.)
 
 echo dela - deploy.lapius7.com tunnel CLI installer
 echo.
@@ -20,10 +21,12 @@ echo [OK] Go detected (%GOVER%)
 
 where ssh >nul 2>nul
 if errorlevel 1 (
-    echo [WARN] ssh command not found. dela needs ssh to run (normally bundled with Windows 10/11; enable the OpenSSH Client optional feature if missing).
+    echo [WARN] ssh command not found. dela needs ssh to run.
+    echo        It is normally bundled with Windows 10/11; enable the
+    echo        "OpenSSH Client" optional feature in Settings if missing.
 )
 
-echo [..] Downloading and building dela (github.com/lapius7/dela-cli/cli/cmd/dela@latest^)
+echo [..] Downloading and building dela
 go install github.com/lapius7/dela-cli/cli/cmd/dela@latest
 if errorlevel 1 (
     echo [ERROR] Install failed.
@@ -44,7 +47,7 @@ echo %PATH% | find /i "%GOBIN%" >nul
 if errorlevel 1 (
     echo [WARN] %GOBIN% is not on PATH. Add it with:
     echo     setx PATH "%%PATH%%;%GOBIN%"
-    echo   (open a new Command Prompt window afterwards for it to take effect^)
+    echo     (open a new Command Prompt window afterwards for it to take effect)
 )
 
 echo.
