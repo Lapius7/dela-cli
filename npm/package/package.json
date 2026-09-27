@@ -1,0 +1,28 @@
+{
+  "name": "@lapius/dela-cli",
+  "version": "0.0.0",
+  "description": "deploy.lapius7.com へローカルのポートを公開するトンネル CLI（dela）",
+  "keywords": ["cli", "tunnel", "ssh", "deploy"],
+  "homepage": "https://github.com/Lapius7/dela-cli",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lapius7/dela-cli.git"
+  },
+  "license": "MIT",
+  "bin": {
+    "dela": "bin/dela"
+  },
+  "files": [
+    "bin/dela"
+  ],
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "optionalDependencies": {}
+}

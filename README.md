@@ -37,6 +37,14 @@ dela · deploy.lapius7.com
 
 ## インストール
 
+### npm(Go 不要)
+
+```bash
+npm i -g @lapius/dela-cli
+```
+
+Linux / macOS / Windows のビルド済みバイナリが入る。以下は Go でソースから入れる方法。
+
 Goがインストールされている環境向け(sca-cliと同じ方式)。
 
 ### macOS / Linux / Windows(Git Bash・WSL)

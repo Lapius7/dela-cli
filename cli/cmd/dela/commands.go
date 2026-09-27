@@ -8,7 +8,8 @@ import (
 	"time"
 )
 
-const cliVersion = "0.2.0"
+// cliVersion は npm 版では -ldflags "-X main.cliVersion=..." で埋め込む
+var cliVersion = "0.2.0"
 
 // dela list: このPCから起動中のトンネル一覧を表示する
 func cmdList() {
