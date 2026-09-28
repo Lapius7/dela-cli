@@ -18,14 +18,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: cli/go.mod
+          go-version-file: go.mod
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm install -g npm@latest # OIDC での公開には npm 11.5.1 以降が必要
       - run: go vet ./... && go test ./...
-        working-directory: cli
       - run: node npm/build.mjs "${GITHUB_REF_NAME#v}" --publish
       - name: GitHub Release にバイナリを添付
         run: |

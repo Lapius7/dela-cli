@@ -32,7 +32,7 @@ rem after a push. Use direct so it always fetches straight from GitHub.
 set GOPROXY=direct
 
 echo [..] Downloading and building dela
-go install github.com/lapius7/dela-cli/cli/cmd/dela@latest
+go install github.com/lapius7/dela-cli/cmd/dela@latest
 if errorlevel 1 (
     echo [ERROR] Install failed.
     exit /b 1

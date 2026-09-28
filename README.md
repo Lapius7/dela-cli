@@ -74,7 +74,7 @@ curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.bat -
 
 ---
 
-どれも内部的に`go install github.com/lapius7/dela-cli/cli/cmd/dela@latest`を`GOPROXY=direct`で実行し、
+どれも内部的に`go install github.com/lapius7/dela-cli/cmd/dela@latest`を`GOPROXY=direct`で実行し、
 `$(go env GOPATH)/bin`(Windowsは`%GOPATH%\bin`)に`dela`(Windowsは`dela.exe`)を配置する。
 このディレクトリにPATHが通っていない場合は、インストーラーが警告を表示するので指示に従うこと。
 `GOPROXY=direct`にしているのは、Goの公式モジュールプロキシがタグの無いブランチの`@latest`解決結果を
@@ -122,7 +122,7 @@ dela version          バージョンを表示する
 ## 構成
 
 `sish`を薄くラップしているだけで、SSHプロトコル自体は自前実装せずシステムの`ssh`コマンドを
-サブプロセスとして呼び出す(`cli/cmd/dela/`)。色付け・スピナーもGo標準ライブラリのみの自前実装で、
+サブプロセスとして呼び出す(`cmd/dela/`)。色付け・スピナーもGo標準ライブラリのみの自前実装で、
 外部依存は無い(sca-cliと同じ方針)。
 
 | ファイル | 役割 |
