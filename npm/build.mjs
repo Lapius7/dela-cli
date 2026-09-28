@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const BIN = 'dela'; // コマンド名
-const GODIR = 'cli'; // go.mod のあるディレクトリ（リポジトリからの相対）
+const GODIR = '.'; // go.mod のあるディレクトリ（リポジトリからの相対）
 const MAIN = './cmd/dela'; // go build の対象（GODIR からの相対）
 const LDFLAGS = ''; // 追加の -X（npm 版であることを埋め込むなど）
 

@@ -4,7 +4,7 @@
 #
 $ErrorActionPreference = "Stop"
 
-$Pkg = "github.com/lapius7/dela-cli/cli/cmd/dela"
+$Pkg = "github.com/lapius7/dela-cli/cmd/dela"
 
 Write-Host "dela — deploy.lapius7.com トンネルCLI installer`n" -ForegroundColor Cyan
 
