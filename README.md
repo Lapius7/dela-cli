@@ -37,29 +37,32 @@ dela · deploy.lapius7.com
 
 ## インストール
 
-### npm(Go 不要)
+### npm(推奨)
 
 ```bash
 npm i -g @lapius/dela-cli
 ```
 
-Linux / macOS / Windows のビルド済みバイナリが入る。以下は Go でソースから入れる方法。
+Linux / macOS(x64・arm64)/ Windows(x64)のビルド済みバイナリが入る(Go 不要、Node.js 18 以降)。
+更新も同じコマンド(`npm i -g @lapius/dela-cli`)で行う。
+
+### インストーラースクリプト(Go でソースからビルド)
 
 Goがインストールされている環境向け(sca-cliと同じ方式)。
 
-### macOS / Linux / Windows(Git Bash・WSL)
+#### macOS / Linux / Windows(Git Bash・WSL)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.sh | bash
 ```
 
-### Windows(PowerShell)
+#### Windows(PowerShell)
 
 ```powershell
 irm https://raw.githubusercontent.com/lapius7/dela-cli/main/install.ps1 | iex
 ```
 
-### Windows(コマンドプロンプト / cmd)
+#### Windows(コマンドプロンプト / cmd)
 
 cmdは`irm`/`iex`のようなワンライナー実行に対応していないため、一度ファイルとして保存してから実行する:
 
@@ -77,7 +80,7 @@ curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.bat -
 `GOPROXY=direct`にしているのは、Goの公式モジュールプロキシがタグの無いブランチの`@latest`解決結果を
 キャッシュすることがあり、更新後もしばらく古いコミットが返ることがあるため(常にGitHubから直接取得させる)。
 
-更新したい時も同じコマンドをもう一度実行すればよい(`go install`は既存のバイナリを上書きする)。
+インストーラーで入れた場合は、同じコマンドをもう一度実行すれば更新できる(`go install`は既存のバイナリを上書きする)。
 
 ## 使い方
 
