@@ -18,9 +18,10 @@ import (
 const (
 	tunnelHost = "deploy.lapius7.com"
 	tunnelPort = "2200"
-	// 初回接続時にsshが表示するホスト鍵確認プロンプトで、フィンガープリントが
-	// これと一致することを確認してから "yes" と答えること(なりすまし対策)。
+	// サーバーのED25519ホスト鍵。この鍵をバイナリに固定し、一時known_hostsで
+	// 厳格検証する(初回確認プロンプトが不要で、なりすましも防げる)。
 	hostKeyFingerprint = "SHA256:TFfR22+f3m4Fpp/5u3svHfC95Srtq+OyhWqylM8ioGc"
+	hostPublicKey      = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL2oBb6EnATO6A1cYCnEBcC5nUNl2/TuCcg/7YxYuvU3"
 )
 
 // fmt.Println等が書く素の"\n"だけだと、環境によって(特にWindowsの一部の端末)
@@ -139,6 +140,17 @@ func sanitize(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// 固定したホスト鍵だけを書いた一時known_hostsを作る
+func writeKnownHosts() (string, error) {
+	f, err := os.CreateTemp("", "dela-known-hosts-*")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "[%s]:%s %s\n", tunnelHost, tunnelPort, hostPublicKey)
+	return f.Name(), err
+}
+
 func run(target string, verbose bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -153,8 +165,17 @@ func run(target string, verbose bool) {
 		cancel()
 	}()
 
+	knownHosts, err := writeKnownHosts()
+	if err != nil {
+		fail(err)
+	}
+	defer os.Remove(knownHosts)
+
 	cmd := exec.CommandContext(ctx, "ssh",
 		"-p", tunnelPort,
+		"-o", "UserKnownHostsFile="+knownHosts,
+		"-o", "GlobalKnownHostsFile="+os.DevNull,
+		"-o", "StrictHostKeyChecking=yes",
 		"-R", "x:80:"+target,
 		"-o", "ExitOnForwardFailure=yes",
 		"-o", "ServerAliveInterval=30",
