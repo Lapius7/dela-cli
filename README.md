@@ -41,11 +41,11 @@ dela · deploy.lapius7.com
 ### npm(推奨)
 
 ```bash
-npm i -g @lapius/dela-cli
+pnpm add -g @lapius/dela-cli
 ```
 
 Linux / macOS(x64・arm64)/ Windows(x64)のビルド済みバイナリが入る(Go 不要、Node.js 18 以降)。
-更新も同じコマンド(`npm i -g @lapius/dela-cli`)で行う。
+更新も同じコマンド(`pnpm add -g @lapius/dela-cli`)で行う。
 
 ### インストーラースクリプト(Go でソースからビルド)
 
