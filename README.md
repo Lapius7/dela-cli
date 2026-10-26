@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/hero-dark.png">
-    <img alt="dela — ローカルのポートを https://app-xxxx.try.lapius7.si で公開" src="docs/hero-light.png" width="900">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Lapius7/dela-cli/main/docs/hero-dark.png">
+    <img alt="dela — ローカルのポートを https://app-xxxx.try.lapius7.si で公開" src="https://raw.githubusercontent.com/Lapius7/dela-cli/main/docs/hero-light.png" width="900">
   </picture>
 </p>
 
