@@ -1,19 +1,19 @@
-# dela (deplapius) — deploy.lapius7.com 用トンネルCLI
+# dela (deplapius) — try.lapius7.si 用トンネルCLI
 
 `try.cloudflare.com`の`cloudflared tunnel --url`相当を、自前のトンネルサーバー
-(`deploy.lapius7.com`、実体は[sish](https://github.com/antoniomika/sish))に対して行うCLI。
-ローカルのポートを実行するだけで `https://xxxx.deploy.lapius7.com` として即座に公開できる。
+(`try.lapius7.si`、実体は[sish](https://github.com/antoniomika/sish))に対して行うCLI。
+ローカルのポートを実行するだけで `https://xxxx.try.lapius7.si` として即座に公開できる。
 
 ```
 dela 3000
 ```
 
 ```
-dela · deploy.lapius7.com
+dela · try.lapius7.si
 
   ✓ トンネルを確立しました
 
-    🔗  https://cc9z4sx0.deploy.lapius7.com
+    🔗  https://cc9z4sx0.try.lapius7.si
         → localhost:3000
 
   Ctrl+C で終了 · 他のターミナルからは dela list / dela stop で確認・停止できます
@@ -27,7 +27,7 @@ dela · deploy.lapius7.com
 ## 前提
 
 - システムに`ssh`コマンドがあること(Windows 10/11・macOS・Linuxに標準搭載)。
-- 接続には**事前に登録した公開鍵**が必要(オーナー専用。未登録の鍵からは接続を拒否される)。
+- **登録も SSH 鍵も不要**(誰でも使える公開トンネル)。手元の鍵・ssh-agent は使われない。HTTP(S) のみで、TCP 転送は使えない。IP ごとに同時接続数・接続頻度の上限があり、1 時間通信がないと切断される。接続元 IP とサブドメインはサーバー側にログとして記録される。
 - サーバーのホスト鍵はバイナリに固定されており、ホスト鍵の確認プロンプトは出ない(鍵が一致しない場合は接続を拒否する)。
   フィンガープリント:
   ```
@@ -110,14 +110,6 @@ dela version          バージョンを表示する
 
 - **`502 Bad Gateway`が出る**: トンネル自体は正常に繋がっている。指定したポートに実際のサーバーが
   起動していないだけなので、まず`http://localhost:<port>/`がローカルで開けるか確認すること。
-- **`Permission denied` / 接続がすぐ切れる**: 手元に複数のSSH鍵(特に`id_rsa`)がある場合、
-  意図しない方の鍵が先に試されて拒否されると、そのまま接続ごと切断されることがある。
-  `~/.ssh/config`に以下を追記し、`deploy.lapius7.com`宛はed25519鍵だけを使うよう固定するとよい:
-  ```
-  Host deploy.lapius7.com
-      IdentityFile ~/.ssh/id_ed25519
-      IdentitiesOnly yes
-  ```
 - **`go install`しても変更が反映されない**: Goの公式モジュールプロキシのキャッシュが原因のことがある。
   `$env:GOPROXY = "direct"`(PowerShell)や`GOPROXY=direct`(bash)を付けて`go install`し直すこと
   (各インストーラーは既にこれを行っている)。

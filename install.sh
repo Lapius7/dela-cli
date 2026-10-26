@@ -23,7 +23,7 @@ ok()   { printf "%s✓%s %s\n" "$GREEN" "$RESET" "$1"; }
 warn() { printf "%s!%s %s\n" "$YELLOW" "$RESET" "$1"; }
 err()  { printf "%s✗%s %s\n" "$RED" "$RESET" "$1" >&2; }
 
-printf "%sdela%s — deploy.lapius7.com トンネルCLI installer\n\n" "$BOLD" "$RESET"
+printf "%sdela%s — try.lapius7.si トンネルCLI installer\n\n" "$BOLD" "$RESET"
 
 if ! command -v go >/dev/null 2>&1; then
   err "Go が見つかりません。https://go.dev/dl/ からインストールしてから、もう一度実行してください。"

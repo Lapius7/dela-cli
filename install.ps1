@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $Pkg = "github.com/lapius7/dela-cli/cmd/dela"
 
-Write-Host "dela — deploy.lapius7.com トンネルCLI installer`n" -ForegroundColor Cyan
+Write-Host "dela — try.lapius7.si トンネルCLI installer`n" -ForegroundColor Cyan
 
 $go = Get-Command go -ErrorAction SilentlyContinue
 if (-not $go) {

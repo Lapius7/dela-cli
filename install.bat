@@ -8,7 +8,7 @@ rem (cmd does not support one-liner piping like PowerShell's irm/iex, so this
 rem  script is downloaded to a file first, then run. If PowerShell is
 rem  available, install.ps1 is a shorter one-liner.)
 
-echo dela - deploy.lapius7.com tunnel CLI installer
+echo dela - try.lapius7.si tunnel CLI installer
 echo.
 
 where go >nul 2>nul

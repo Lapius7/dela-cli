@@ -1,7 +1,7 @@
 {
   "name": "@lapius/dela-cli",
   "version": "0.0.0",
-  "description": "deploy.lapius7.com へローカルのポートを公開するトンネル CLI（dela）",
+  "description": "try.lapius7.si へローカルのポートを公開するトンネル CLI（dela）",
   "keywords": ["cli", "tunnel", "ssh", "deploy"],
   "homepage": "https://github.com/Lapius7/dela-cli",
   "repository": {

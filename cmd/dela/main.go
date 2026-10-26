@@ -1,6 +1,6 @@
-// dela (deplapius) は、ローカルのポートを https://xxxx.deploy.lapius7.com として
+// dela (deplapius) は、ローカルのポートを https://xxxx.try.lapius7.si として
 // 即座に公開するCLI。try.cloudflare.comの`cloudflared tunnel --url`相当を、
-// 自前のトンネルサーバー(sish, deploy.lapius7.com)に対してsshクライアントを
+// 自前のトンネルサーバー(sish, try.lapius7.si)に対してsshクライアントを
 // 呼び出す薄いラッパーとして実装している(SSHプロトコル自体は再実装しない)。
 package main
 
@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	tunnelHost = "deploy.lapius7.com"
+	tunnelHost = "try.lapius7.si"
 	tunnelPort = "2200"
 	// サーバーのED25519ホスト鍵。この鍵をバイナリに固定し、一時known_hostsで
 	// 厳格検証する(初回確認プロンプトが不要で、なりすましも防げる)。
@@ -109,7 +109,7 @@ Ctrl+C でトンネルを終了します(URLも即座に無効になります)�
   - 初回接続時、ホスト鍵の確認が出ます。フィンガープリントが次と一致することを確認してください:
       %s
 `,
-		bold("dela"), dim("(deplapius) — ローカルのポートを https://xxxx.deploy.lapius7.com として即座に公開する"),
+		bold("dela"), dim("(deplapius) — ローカルのポートを https://xxxx.try.lapius7.si として即座に公開する"),
 		bold("使い方:"),
 		cyan("dela <port>"),
 		cyan("dela <host:port>"),
@@ -178,6 +178,10 @@ func run(target string, verbose bool) {
 		"-o", "StrictHostKeyChecking=yes",
 		"-R", "x:80:"+target,
 		"-o", "ExitOnForwardFailure=yes",
+		// 鍵なしの公開サーバー: 手元の鍵・エージェントは使わない(誤った鍵で切断されるのを防ぐ)
+		"-o", "PubkeyAuthentication=no",
+		"-o", "IdentitiesOnly=yes",
+		"-o", "IdentityAgent=none",
 		"-o", "ServerAliveInterval=30",
 		tunnelHost,
 	)
