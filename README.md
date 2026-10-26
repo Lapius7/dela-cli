@@ -1,8 +1,17 @@
-# dela (deplapius) — try.lapius7.si 用トンネルCLI
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/hero-dark.png">
+    <img alt="dela — ローカルのポートを https://app-xxxx.try.lapius7.si で公開" src="docs/hero-light.png" width="900">
+  </picture>
+</p>
 
-`try.cloudflare.com`の`cloudflared tunnel --url`相当を、自前のトンネルサーバー
-(`try.lapius7.si`、実体は[sish](https://github.com/antoniomika/sish))に対して行うCLI。
-ローカルのポートを実行するだけで `https://xxxx.try.lapius7.si` として即座に公開できる。
+# dela — ローカルのポートを一時的に HTTPS 公開
+
+登録も SSH 鍵も不要。`dela 3000` を実行するだけで、ローカルのポートが
+`https://app-xxxxxxxxxx.try.lapius7.si` として即座に公開されます(`try.cloudflare.com` の `cloudflared tunnel --url` に近い使い心地)。
+URL はプロジェクトごとに固定で、リクエストの確認(`--inspect`)・パスワード保護(`--auth`)・自動再接続にも対応しています。
+
+詳しい使い方: **https://try.lapius7.si/use**
 
 ```
 dela 3000
@@ -13,7 +22,7 @@ dela · try.lapius7.si
 
   ✓ トンネルを確立しました
 
-    🔗  https://cc9z4sx0.try.lapius7.si
+    🔗  https://app-k3x9q2m7ab.try.lapius7.si
         → localhost:3000
 
   Ctrl+C で終了 · 他のターミナルからは dela list / dela stop で確認・停止できます
@@ -90,7 +99,7 @@ curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.bat -
 ```
 dela <port>          例: dela 3000        (localhost:3000 を公開)
 dela <host:port>     例: dela 127.0.0.1:8080
-dela <port> -v       接続の生ログ(sishの内部メッセージ)も表示する
+dela <port> -v       接続の詳細ログも表示する
 dela --help
 ```
 
@@ -167,7 +176,7 @@ dela version          バージョンを表示する
 
 ## 構成
 
-`sish`を薄くラップしているだけで、SSHプロトコル自体は自前実装せずシステムの`ssh`コマンドを
+システムの`ssh`コマンドを呼び出す薄いラッパーで、SSHプロトコル自体は自前実装せず
 サブプロセスとして呼び出す(`cmd/dela/`)。色付け・スピナーもGo標準ライブラリのみの自前実装で、
 外部依存は無い(sca-cliと同じ方針)。
 

@@ -1,6 +1,6 @@
 // dela (deplapius) は、ローカルのポートを https://xxxx.try.lapius7.si として
 // 即座に公開するCLI。try.cloudflare.comの`cloudflared tunnel --url`相当を、
-// 自前のトンネルサーバー(sish, try.lapius7.si)に対してsshクライアントを
+// トンネルサーバー(try.lapius7.si)に対してsshクライアントを
 // 呼び出す薄いラッパーとして実装している(SSHプロトコル自体は再実装しない)。
 package main
 
