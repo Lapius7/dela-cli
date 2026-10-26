@@ -32,6 +32,9 @@ func out(s string) {
 }
 
 func main() {
+	if maybeAskpass() {
+		return
+	}
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(2)
@@ -46,20 +49,40 @@ func main() {
 	case "stop":
 		cmdStop(os.Args[2:])
 		return
+	case "renew":
+		cmdRenew()
+		return
+	case "info":
+		cmdInfo()
+		return
 	case "version", "-V":
 		cmdVersion()
 		return
 	}
 
 	verbose := false
+	label := defaultLabel
 	args := os.Args[1:]
-	filtered := args[:0]
-	for _, a := range args {
-		if a == "-v" || a == "--verbose" {
+	filtered := args[:0:0]
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-v" || a == "--verbose":
 			verbose = true
-			continue
+		case a == "-n" || a == "--name":
+			if i+1 >= len(args) {
+				fail(fmt.Errorf("--name には名前を指定してください(例: --name api)"))
+			}
+			i++
+			label = args[i]
+		case strings.HasPrefix(a, "--name="):
+			label = strings.TrimPrefix(a, "--name=")
+		default:
+			filtered = append(filtered, a)
 		}
-		filtered = append(filtered, a)
+	}
+	if err := validateLabel(label); err != nil {
+		fail(err)
 	}
 	if len(filtered) < 1 {
 		printUsage()
@@ -69,7 +92,7 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	run(target, verbose)
+	run(target, label, verbose)
 }
 
 // "3000" のようなポート番号だけの指定は localhost:3000 として扱う。
@@ -92,32 +115,40 @@ func printUsage() {
 %s
   %s        例: dela 3000        (localhost:3000 を公開)
   %s   例: dela 127.0.0.1:8080
+  %s   同じプロジェクト内で別のサービスを公開する(例: --name api)
   %s          接続の生ログも表示する
 
 %s
   %s              このPCから起動中のトンネル一覧を表示する
   %s     PIDを指定してトンネルを停止する
   %s          すべてのトンネルを停止する
+  %s              このプロジェクトの URL を表示する
+  %s             サブドメインを作り直す(古い URL は無効になる)
   %s           バージョンを表示する
 
-実行するとランダムなサブドメインのURLが発行され、外部からアクセスできるようになります。
-Ctrl+C でトンネルを終了します(URLも即座に無効になります)。
+初回の実行で、プロジェクトのフォルダ(git ならルート)に .dela ができ、サーバーが発行した
+サブドメインが保存されます。以降は同じプロジェクトなら毎回同じ URL(app-xxxx.try.lapius7.si)です。
+.dela には秘密の token が入っています(git の場合は .gitignore に自動で追記します)。
+Ctrl+C でトンネルを終了します(URLは次の起動まで無効になります)。
 
 %s
   - システムに ssh コマンドが必要です(Windows 10/11・macOS・Linuxに標準搭載)。
-  - 接続にはあらかじめ登録した公開鍵が必要です(未登録の場合は接続を拒否されます)。
-  - 初回接続時、ホスト鍵の確認が出ます。フィンガープリントが次と一致することを確認してください:
+  - 登録や SSH 鍵は不要です(初回に自動でサブドメインが発行されます)。ssh は 8.4 以降が必要です。
+  - ホスト鍵は dela に固定されています。フィンガープリントは次のとおりです:
       %s
 `,
 		bold("dela"), dim("(deplapius) — ローカルのポートを https://xxxx.try.lapius7.si として即座に公開する"),
 		bold("使い方:"),
 		cyan("dela <port>"),
 		cyan("dela <host:port>"),
+		cyan("-n, --name <名前>"),
 		cyan("-v, --verbose"),
 		bold("管理コマンド:"),
 		cyan("dela list"),
 		cyan("dela stop <PID>"),
 		cyan("dela stop --all"),
+		cyan("dela info"),
+		cyan("dela renew"),
 		cyan("dela version"),
 		bold("事前準備:"),
 		yellow(hostKeyFingerprint),
@@ -125,7 +156,7 @@ Ctrl+C でトンネルを終了します(URLも即座に無効になります)�
 }
 
 var (
-	urlLineRe = regexp.MustCompile(`https://[a-z0-9]+\.` + regexp.QuoteMeta(tunnelHost))
+	urlLineRe = regexp.MustCompile(`https://[a-z0-9-]+\.` + regexp.QuoteMeta(tunnelHost))
 	// sishは色付け(SGR)だけでなく、カーソル移動・行クリア等のCSIシーケンスも送ってくる。
 	// CSI全般([0-9;]*の後に英字1文字で終わるシーケンス)を丸ごと除去する。
 	ansiCSIRe = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
@@ -151,7 +182,7 @@ func writeKnownHosts() (string, error) {
 	return f.Name(), err
 }
 
-func run(target string, verbose bool) {
+func run(target, label string, verbose bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -165,6 +196,18 @@ func run(target string, verbose bool) {
 		cancel()
 	}()
 
+	proj, projPath, created, ignored, err := loadOrCreateProject()
+	if err != nil {
+		fail(err)
+	}
+	if created {
+		out(fmt.Sprintf("  %s %s %s\n", green("✓"), "このプロジェクト用のサブドメインを発行しました:", dim(projPath)))
+		if ignored {
+			out(dim("    (秘密の token を含むので .gitignore に .dela を追記しました)") + "\n")
+		}
+		out("\n")
+	}
+
 	knownHosts, err := writeKnownHosts()
 	if err != nil {
 		fail(err)
@@ -173,10 +216,13 @@ func run(target string, verbose bool) {
 
 	cmd := exec.CommandContext(ctx, "ssh",
 		"-p", tunnelPort,
+		"-l", proj.ID,
+		"-o", "PreferredAuthentications=password",
+		"-o", "NumberOfPasswordPrompts=1",
 		"-o", "UserKnownHostsFile="+knownHosts,
 		"-o", "GlobalKnownHostsFile="+os.DevNull,
 		"-o", "StrictHostKeyChecking=yes",
-		"-R", "x:80:"+target,
+		"-R", label+":80:"+target,
 		"-o", "ExitOnForwardFailure=yes",
 		// 鍵なしの公開サーバー: 手元の鍵・エージェントは使わない(誤った鍵で切断されるのを防ぐ)
 		"-o", "PubkeyAuthentication=no",
@@ -184,6 +230,14 @@ func run(target string, verbose bool) {
 		"-o", "IdentityAgent=none",
 		"-o", "ServerAliveInterval=30",
 		tunnelHost,
+	)
+	exe, _ := os.Executable()
+	cmd.Env = append(os.Environ(),
+		"SSH_ASKPASS="+exe,
+		"SSH_ASKPASS_REQUIRE=force",
+		"DISPLAY=:0",
+		"DELA_ASKPASS=1",
+		"DELA_ASKPASS_TOKEN="+proj.Token,
 	)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -240,6 +294,9 @@ func run(target string, verbose bool) {
 		return
 	}
 	if err != nil {
+		if !printed {
+			out(dim("  同じ名前のトンネルが既に起動中なら dela list / dela stop で止めてください。認証に失敗する場合は dela renew でサブドメインを再発行してください。") + "\n")
+		}
 		fail(fmt.Errorf("接続が終了しました: %w", err))
 	}
 }
