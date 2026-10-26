@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dela inspect</title>
+<style>
+:root{color-scheme:light dark;--bg:#fafafa;--fg:#161616;--sub:#6b6b6b;--line:#dcdcdc;--code:#f0f0f0;--ok:#1a7f37;--warn:#9a6700;--err:#cf222e;--sel:#e8e8e8;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#161616;--fg:#f2f2f2;--sub:#a0a0a0;--line:#2e2e2e;--code:#222;--ok:#3fb950;--warn:#d29922;--err:#f85149;--sel:#262626}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.6 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line)}
+header b{font:500 14px var(--mono)}header span{color:var(--sub)}header button{margin-left:auto;font:inherit;border:1px solid var(--line);background:none;color:var(--fg);padding:4px 12px;cursor:pointer}
+.wrap{display:grid;grid-template-columns:minmax(320px,42%) 1fr;height:calc(100vh - 45px)}
+@media(max-width:800px){.wrap{grid-template-columns:1fr;grid-template-rows:40% 60%}}
+.list{overflow:auto;border-right:1px solid var(--line)}
+.row{display:grid;grid-template-columns:62px 44px 56px 1fr 64px;gap:8px;padding:6px 12px;border-bottom:1px solid var(--line);cursor:pointer;font:12px var(--mono);align-items:center}
+.row:hover{background:var(--sel)}.row.sel{background:var(--sel)}
+.row .p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .t{color:var(--sub)}
+.s2{color:var(--ok)}.s3{color:var(--sub)}.s4{color:var(--warn)}.s5{color:var(--err)}
+.detail{overflow:auto;padding:14px 18px}
+h3{font:500 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--sub);margin:18px 0 6px}
+h3:first-child{margin-top:0}
+pre{background:var(--code);border:1px solid var(--line);padding:10px 12px;overflow:auto;font:12px/1.6 var(--mono);margin:0;white-space:pre-wrap;word-break:break-all;max-height:360px}
+table{border-collapse:collapse;font:12px var(--mono)}td{padding:1px 14px 1px 0;vertical-align:top}td:first-child{color:var(--sub);white-space:nowrap}
+.empty{color:var(--sub);padding:24px}.note{color:var(--sub);font-size:12px}
+</style></head><body>
+<header><b>dela inspect</b><span id="count"></span><button id="clear">クリア</button></header>
+<div class="wrap"><div class="list" id="list"></div><div class="detail" id="detail"><div class="empty">リクエストを選ぶと詳細が表示されます。</div></div></div>
+<script>
+let sel=null,items=[];
+const $=s=>document.getElementById(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hb=n=>n>=1048576?(n/1048576).toFixed(1)+'MB':n>=1024?(n/1024).toFixed(1)+'KB':n+'B';
+function hdrs(h){const k=Object.keys(h||{}).sort();return k.length?'<table>'+k.map(x=>'<tr><td>'+esc(x)+'</td><td>'+esc(h[x].join(', '))+'</td></tr>').join('')+'</table>':'<span class="note">なし</span>'}
+function body(b){if(b.binary)return '<span class="note">バイナリ('+hb(b.size)+')</span>';if(!b.text)return '<span class="note">空</span>';let t=b.text;try{t=JSON.stringify(JSON.parse(t),null,2)}catch(e){}return '<pre>'+esc(t)+'</pre>'+(b.truncated?'<div class="note">先頭 64KB のみ表示(全体 '+hb(b.size)+')</div>':'')}
+function renderList(){$('count').textContent=items.length+' 件';$('list').innerHTML=items.length?items.map(r=>'<div class="row'+(r.id===sel?' sel':'')+'" data-id="'+r.id+'"><span class="t">'+new Date(r.time).toLocaleTimeString()+'</span><span class="s'+String(r.status)[0]+'">'+(r.status||'-')+'</span><span>'+esc(r.method)+'</span><span class="p" title="'+esc(r.path)+'">'+esc(r.path)+'</span><span class="t">'+r.durationMs+'ms</span></div>').join(''):'<div class="empty">まだリクエストはありません。公開 URL にアクセスすると、ここに表示されます。</div>'}
+async function load(){try{const r=await fetch('/api/requests');items=await r.json()||[];renderList()}catch(e){}}
+async function show(id){sel=id;renderList();const d=await (await fetch('/api/requests/'+id)).json();const r=d.request;
+$('detail').innerHTML='<h3>'+esc(r.method)+' '+esc(r.path)+'</h3><table><tr><td>ステータス</td><td>'+r.status+'</td></tr><tr><td>時刻</td><td>'+new Date(r.time).toLocaleString()+'</td></tr><tr><td>処理時間</td><td>'+r.durationMs+'ms</td></tr><tr><td>送信元</td><td>'+esc(r.remote)+'</td></tr><tr><td>サイズ</td><td>リクエスト '+hb(r.reqSize)+' / レスポンス '+hb(r.respSize)+'</td></tr>'+(r.note?'<tr><td>メモ</td><td>'+esc(r.note)+'</td></tr>':'')+'</table><h3>リクエスト ヘッダー</h3>'+hdrs(r.reqHeaders)+'<h3>リクエスト 本文</h3>'+body(d.reqBody)+'<h3>レスポンス ヘッダー</h3>'+hdrs(r.respHeaders)+'<h3>レスポンス 本文</h3>'+body(d.respBody)}
+$('list').onclick=e=>{const t=e.target.closest('.row');if(t)show(+t.dataset.id)};
+$('clear').onclick=async()=>{await fetch('/api/clear',{method:'POST'});sel=null;$('detail').innerHTML='<div class="empty">クリアしました。</div>';load()};
+load();setInterval(load,1500);
+</script></body></html>

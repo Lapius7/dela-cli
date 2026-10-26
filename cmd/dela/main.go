@@ -12,8 +12,18 @@ import (
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
+
+// options は dela <port> のコマンドラインオプション
+type options struct {
+	inspect     bool   // -i/--inspect: リクエストを記録して表示する
+	inspectPort int    // --inspect-port
+	auth        string // --auth user:pass
+	noReconnect bool   // --no-reconnect
+}
 
 const (
 	tunnelHost = "try.lapius7.si"
@@ -63,6 +73,7 @@ func main() {
 	verbose := false
 	label := defaultLabel
 	temp := false
+	opts := options{auth: os.Getenv("DELA_AUTH")}
 	args := os.Args[1:]
 	filtered := args[:0:0]
 	for i := 0; i < len(args); i++ {
@@ -72,6 +83,19 @@ func main() {
 			verbose = true
 		case a == "-t" || a == "--temp":
 			temp = true
+		case a == "-i" || a == "--inspect":
+			opts.inspect = true
+		case a == "--no-reconnect":
+			opts.noReconnect = true
+		case a == "--inspect-port" || a == "--auth":
+			if i+1 >= len(args) {
+				fail(fmt.Errorf("%s には値を指定してください", a))
+			}
+			i++
+			setValueOption(&opts, a, args[i])
+		case strings.HasPrefix(a, "--inspect-port=") || strings.HasPrefix(a, "--auth="):
+			kv := strings.SplitN(a, "=", 2)
+			setValueOption(&opts, kv[0], kv[1])
 		case a == "-n" || a == "--name":
 			if i+1 >= len(args) {
 				fail(fmt.Errorf("--name には名前を指定してください(例: --name api)"))
@@ -95,7 +119,26 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	run(target, label, verbose, temp)
+	if opts.auth != "" {
+		if u, pw, ok := strings.Cut(opts.auth, ":"); !ok || u == "" || pw == "" {
+			fail(fmt.Errorf("--auth は ユーザー名:パスワード の形式で指定してください(例: --auth demo:s3cret)"))
+		}
+	}
+	run(target, label, verbose, temp, opts)
+}
+
+func setValueOption(o *options, name, val string) {
+	switch name {
+	case "--auth":
+		o.auth = val
+	case "--inspect-port":
+		n, err := strconv.Atoi(val)
+		if err != nil || n < 1 || n > 65535 {
+			fail(fmt.Errorf("--inspect-port には 1〜65535 の数値を指定してください"))
+		}
+		o.inspect = true
+		o.inspectPort = n
+	}
 }
 
 // "3000" のようなポート番号だけの指定は localhost:3000 として扱う。
@@ -120,6 +163,9 @@ func printUsage() {
   %s   例: dela 127.0.0.1:8080
   %s   同じプロジェクト内で別のサービスを公開する(例: --name api)
   %s          一時モード(.delaconfig を作らず、終了で URL を破棄する)
+  %s          リクエストを記録して表示する(ブラウザで http://127.0.0.1:4040 も開ける)
+  %s   公開 URL に Basic 認証をかける(環境変数 DELA_AUTH でも指定可)
+  %s   切断されても自動で再接続しない
   %s          接続の生ログも表示する
 
 %s
@@ -147,6 +193,9 @@ Ctrl+C でトンネルを終了します(URLは次の起動まで無効になり
 		cyan("dela <host:port>"),
 		cyan("-n, --name <名前>"),
 		cyan("-t, --temp"),
+		cyan("-i, --inspect"),
+		cyan("--auth <user:pass>"),
+		cyan("--no-reconnect"),
 		cyan("-v, --verbose"),
 		bold("管理コマンド:"),
 		cyan("dela list"),
@@ -187,7 +236,7 @@ func writeKnownHosts() (string, error) {
 	return f.Name(), err
 }
 
-func run(target, label string, verbose, temp bool) {
+func run(target, label string, verbose, temp bool, opts options) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -222,21 +271,108 @@ func run(target, label string, verbose, temp bool) {
 	}
 	defer os.Remove(knownHosts)
 
+	// 認証・inspect を使うときは、間にローカルのプロキシを挟む(再接続しても同じものを使い続ける)
+	forward := target
+	var extra []string
+	if opts.auth != "" || opts.inspect {
+		px, err := startProxy(target, opts)
+		if err != nil {
+			fail(fmt.Errorf("ローカルプロキシを起動できませんでした: %w", err))
+		}
+		defer px.close()
+		forward = px.addr
+		if opts.auth != "" {
+			user, _, _ := strings.Cut(opts.auth, ":")
+			extra = append(extra, fmt.Sprintf("🔒  Basic 認証が必要です(ユーザー名: %s)", user))
+		}
+		if opts.inspect {
+			is, err := startInspect(px.store, opts.inspectPort)
+			if err != nil {
+				fail(fmt.Errorf("inspect 画面を起動できませんでした: %w", err))
+			}
+			defer is.close()
+			extra = append(extra, "🔍  inspect: http://"+is.Addr)
+		}
+	}
+
+	out(dim("dela · "+tunnelHost) + "\n\n")
+
+	everConnected := false
+	failures := 0
+	backoff := time.Second
+	for {
+		connected, err := session(ctx, sessionArgs{
+			proj: proj, label: label, target: target, forward: forward, knownHosts: knownHosts,
+			verbose: verbose, first: !everConnected, extra: extra,
+		})
+		if ctx.Err() != nil {
+			if everConnected {
+				unregisterTunnel()
+			}
+			printShutdown(everConnected)
+			return
+		}
+		if connected {
+			everConnected = true
+			failures = 0
+			backoff = time.Second
+		} else {
+			failures++
+		}
+		if !everConnected || opts.noReconnect || failures > 30 {
+			if everConnected {
+				unregisterTunnel()
+			}
+			if !everConnected {
+				out(dim("  同じ名前のトンネルが既に起動中なら dela list / dela stop で止めてください。認証に失敗する場合は dela renew でサブドメインを再発行してください。") + "\n")
+			}
+			if err == nil {
+				err = fmt.Errorf("接続できませんでした")
+			}
+			fail(fmt.Errorf("接続が終了しました: %w", err))
+		}
+		out(fmt.Sprintf("\n  %s 接続が切れました。%d秒後に再接続します…(終了は Ctrl+C)\n", yellow("!"), int(backoff.Seconds())))
+		select {
+		case <-ctx.Done():
+			unregisterTunnel()
+			printShutdown(true)
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < 30*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+type sessionArgs struct {
+	proj                   projectID
+	label, target, forward string
+	knownHosts             string
+	verbose, first         bool
+	extra                  []string
+}
+
+// session は ssh を1回起動し、切れるまで待つ。URL が確立したら connected=true を返す。
+func session(ctx context.Context, a sessionArgs) (connected bool, err error) {
 	cmd := exec.CommandContext(ctx, "ssh",
 		"-p", tunnelPort,
-		"-l", proj.ID,
+		"-l", a.proj.ID,
 		"-o", "PreferredAuthentications=password",
 		"-o", "NumberOfPasswordPrompts=1",
-		"-o", "UserKnownHostsFile="+knownHosts,
+		"-o", "UserKnownHostsFile="+a.knownHosts,
 		"-o", "GlobalKnownHostsFile="+os.DevNull,
 		"-o", "StrictHostKeyChecking=yes",
-		"-R", label+":80:"+target,
+		"-R", a.label+":80:"+a.forward,
 		"-o", "ExitOnForwardFailure=yes",
 		// 鍵なしの公開サーバー: 手元の鍵・エージェントは使わない(誤った鍵で切断されるのを防ぐ)
 		"-o", "PubkeyAuthentication=no",
 		"-o", "IdentitiesOnly=yes",
 		"-o", "IdentityAgent=none",
-		"-o", "ServerAliveInterval=30",
+		// 回線が死んだら早めに気づいて再接続できるようにする
+		"-o", "ServerAliveInterval=15",
+		"-o", "ServerAliveCountMax=3",
+		"-o", "ConnectTimeout=15",
 		tunnelHost,
 	)
 	exe, _ := os.Executable()
@@ -245,24 +381,24 @@ func run(target, label string, verbose, temp bool) {
 		"SSH_ASKPASS_REQUIRE=force",
 		"DISPLAY=:0",
 		"DELA_ASKPASS=1",
-		"DELA_ASKPASS_TOKEN="+proj.Token,
+		"DELA_ASKPASS_TOKEN="+a.proj.Token,
 	)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		fail(err)
+	stdout, perr := cmd.StdoutPipe()
+	if perr != nil {
+		fail(perr)
 	}
 	// ホスト鍵確認・エラー等はそのままユーザーの端末に出す
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
-	out(dim("dela · "+tunnelHost) + "\n\n")
-
 	sp := newSpinner("接続中")
-	sp.start()
+	if a.first {
+		sp.start()
+	}
 
-	if err := cmd.Start(); err != nil {
+	if serr := cmd.Start(); serr != nil {
 		sp.stop()
-		fail(fmt.Errorf("sshの起動に失敗しました(sshコマンドがPATHに無い可能性があります): %w", err))
+		fail(fmt.Errorf("sshの起動に失敗しました(sshコマンドがPATHに無い可能性があります): %w", serr))
 	}
 
 	printed := false
@@ -274,42 +410,35 @@ func run(target, label string, verbose, temp bool) {
 		}
 		if m := urlLineRe.FindString(line); m != "" && !printed {
 			sp.stop()
-			printBanner(m, target)
-			registerTunnel(m, target)
+			if a.first {
+				printBanner(m, a.target, a.extra)
+				registerTunnel(m, a.target)
+			} else {
+				out(fmt.Sprintf("  %s 再接続しました: %s\n", green("✓"), cyan(m)))
+			}
 			printed = true
 			continue
 		}
-		if !verbose && noisyLineRe.MatchString(line) {
+		if !a.verbose && noisyLineRe.MatchString(line) {
 			continue
 		}
 		if !printed {
 			// URL判明前の想定外の行は、接続時の問題を見逃さないようスピナーを止めて出す
 			sp.stop()
 			out(dim(line) + "\n")
-			sp.start()
+			if a.first {
+				sp.start()
+			}
 			continue
 		}
 		out(dim(line) + "\n")
 	}
 	sp.stop()
-	if printed {
-		unregisterTunnel()
-	}
-
 	err = cmd.Wait()
-	if ctx.Err() == context.Canceled {
-		printShutdown(printed)
-		return
-	}
-	if err != nil {
-		if !printed {
-			out(dim("  同じ名前のトンネルが既に起動中なら dela list / dela stop で止めてください。認証に失敗する場合は dela renew でサブドメインを再発行してください。") + "\n")
-		}
-		fail(fmt.Errorf("接続が終了しました: %w", err))
-	}
+	return printed, err
 }
 
-func printBanner(url, target string) {
+func printBanner(url, target string, extra []string) {
 	out(fmt.Sprintf(
 		"  %s %s\n\n    %s  %s\n        %s %s\n\n  %s\n\n",
 		green("✓"), bold("トンネルを確立しました"),
@@ -317,6 +446,13 @@ func printBanner(url, target string) {
 		dim("→"), dim(target),
 		dim("Ctrl+C で終了 · 他のターミナルからは dela list / dela stop で確認・停止できます"),
 	))
+	if len(extra) > 0 {
+		// バナーの空行の手前に入れず、続けて表示する
+		for _, e := range extra {
+			out("    " + e + "\n")
+		}
+		out("\n")
+	}
 }
 
 // Ctrl+C(SIGINT)で終了した際の確定メッセージ。トンネルが確立済みだったかどうかで文言を変える。

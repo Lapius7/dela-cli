@@ -117,6 +117,34 @@ dela 3000 --temp          一時モード(下記)
 - 同じ名前(`app` や `api`)のトンネルを同時に 2 つ起動することはできない。
 - 別の PC で同じ URL を使いたい場合は、`.delaconfig` をそのPCのプロジェクトにコピーする。
 
+### 自動再接続
+
+回線の瞬断や PC のスリープなどで切れても、**同じ URL のまま自動で再接続**する(1 秒から 30 秒まで間隔を広げながら再試行)。
+`Ctrl+C` で終了する。再接続したくないときは `--no-reconnect`。
+
+### リクエストの確認(`--inspect` / `-i`)
+
+```
+dela 3000 --inspect
+```
+
+届いたリクエストをターミナルに 1 行ずつ表示し、ブラウザで `http://127.0.0.1:4040`(使用中なら 4041…)を開くと、
+ヘッダー・本文(先頭 64KB、JSON は整形、gzip は展開)を確認できる。Webhook のデバッグに便利。
+`Authorization` / `Cookie` / `Set-Cookie` ヘッダーの値は `[redacted]` に伏せて記録する。
+画面はこの PC の `127.0.0.1` だけで待ち受け、記録はメモリ上のみ(最新 300 件、終了すると消える)。
+ポートを変えるには `--inspect-port 5050`。
+
+### パスワード保護(`--auth`)
+
+```
+dela 3000 --auth demo:s3cret
+DELA_AUTH=demo:s3cret dela 3000      # 環境変数でも指定できる(シェルの履歴に残したくないとき)
+```
+
+公開 URL にアクセスすると Basic 認証を求める。認証は手元の `dela` が行い(パスワードはサーバーに送られない)、
+通らなかったリクエストはローカルのサーバーに届かない。`--inspect` と併用できる。
+`.delaconfig` には保存されないので、起動のたびに指定する。
+
 ### 管理コマンド
 
 このPCで起動中のトンネルは、`~/.dela/state/`にプロセスごとの記録として残るので、
@@ -150,6 +178,7 @@ dela version          バージョンを表示する
 | `spinner.go` | 接続待ち中のスピナー表示 |
 | `state.go` | `dela list`/`stop`用のローカル状態ファイル(`~/.dela/state/`)管理 |
 | `project.go` | `.delaconfig`(プロジェクトID)の読み書き・サーバーでの発行/解放・`dela renew`/`info`・ssh パスワード入力(SSH_ASKPASS)の代行 |
+| `proxy.go` / `inspect.html` | `--auth` と `--inspect` のためのローカルリバースプロキシ・リクエスト記録・確認画面 |
 | `commands.go` | `list`/`stop`/`version`コマンドの実装 |
 | `procalive_unix.go` / `procalive_windows.go` | プロセスの生死確認(OS別実装) |
 
