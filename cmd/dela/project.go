@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	projectFileName = ".dela"
+	projectFileName = ".delaconfig"
 	defaultLabel    = "app"
 	registryBase    = "https://" + tunnelHost + "/_api/v1"
 )
 
-// projectID は .dela に保存するこのプロジェクトの識別情報。
+// projectID は .delaconfig に保存するこのプロジェクトの識別情報。
 // id がサブドメインの一部(<label>-<id>.try.lapius7.si)になり、token がその持ち主であることの証明になる。
 type projectID struct {
 	ID    string `json:"id"`
@@ -37,7 +37,7 @@ func validateLabel(l string) error {
 	return nil
 }
 
-// カレントディレクトリから親に向かって .dela を探す
+// カレントディレクトリから親に向かって .delaconfig を探す
 func findProjectFile() (string, bool) {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -141,7 +141,7 @@ func releaseID(p projectID) {
 	_, _, _ = registryPost("/release", map[string]string{"id": p.ID, "token": p.Token})
 }
 
-// .gitignore に .dela が無ければ追記する(token をうっかりコミットしないため)。追記したら true
+// .gitignore に .delaconfig が無ければ追記する(token をうっかりコミットしないため)。追記したら true
 func ensureGitignored(dir string) bool {
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
 		return false
@@ -165,8 +165,13 @@ func ensureGitignored(dir string) bool {
 	return err == nil
 }
 
-// このプロジェクトの ID を返す。無ければサーバーで発行して .dela に保存する。
-func loadOrCreateProject() (p projectID, path string, created bool, ignored bool, err error) {
+// このプロジェクトの ID を返す。無ければサーバーで発行して .delaconfig に保存する。
+func loadOrCreateProject(temp bool) (p projectID, path string, created bool, ignored bool, err error) {
+	if temp {
+		// 一時モード: 設定ファイルを読まず・作らず、使い捨ての ID を発行する
+		p, err = registerNewID()
+		return p, "", true, false, err
+	}
 	if path, ok := findProjectFile(); ok {
 		p, err = readProjectFile(path)
 		return p, path, false, false, err
@@ -192,7 +197,7 @@ func projectURL(label, id string) string {
 func cmdRenew() {
 	path, ok := findProjectFile()
 	if !ok {
-		out(dim("このプロジェクトにはまだ .dela がありません。dela <port> を実行すると自動で作られます。") + "\n")
+		out(dim("このプロジェクトにはまだ .delaconfig がありません。dela <port> を実行すると自動で作られます。") + "\n")
 		return
 	}
 	old, oldErr := readProjectFile(path)
@@ -213,7 +218,7 @@ func cmdRenew() {
 func cmdInfo() {
 	path, ok := findProjectFile()
 	if !ok {
-		out(dim("このプロジェクトにはまだ .dela がありません。dela <port> を実行すると自動で作られます。") + "\n")
+		out(dim("このプロジェクトにはまだ .delaconfig がありません。dela <port> を実行すると自動で作られます。") + "\n")
 		return
 	}
 	p, err := readProjectFile(path)

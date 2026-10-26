@@ -62,6 +62,7 @@ func main() {
 
 	verbose := false
 	label := defaultLabel
+	temp := false
 	args := os.Args[1:]
 	filtered := args[:0:0]
 	for i := 0; i < len(args); i++ {
@@ -69,6 +70,8 @@ func main() {
 		switch {
 		case a == "-v" || a == "--verbose":
 			verbose = true
+		case a == "-t" || a == "--temp":
+			temp = true
 		case a == "-n" || a == "--name":
 			if i+1 >= len(args) {
 				fail(fmt.Errorf("--name には名前を指定してください(例: --name api)"))
@@ -92,7 +95,7 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	run(target, label, verbose)
+	run(target, label, verbose, temp)
 }
 
 // "3000" のようなポート番号だけの指定は localhost:3000 として扱う。
@@ -116,6 +119,7 @@ func printUsage() {
   %s        例: dela 3000        (localhost:3000 を公開)
   %s   例: dela 127.0.0.1:8080
   %s   同じプロジェクト内で別のサービスを公開する(例: --name api)
+  %s          一時モード(.delaconfig を作らず、終了で URL を破棄する)
   %s          接続の生ログも表示する
 
 %s
@@ -126,9 +130,9 @@ func printUsage() {
   %s             サブドメインを作り直す(古い URL は無効になる)
   %s           バージョンを表示する
 
-初回の実行で、プロジェクトのフォルダ(git ならルート)に .dela ができ、サーバーが発行した
+初回の実行で、プロジェクトのフォルダ(git ならルート)に .delaconfig ができ、サーバーが発行した
 サブドメインが保存されます。以降は同じプロジェクトなら毎回同じ URL(app-xxxx.try.lapius7.si)です。
-.dela には秘密の token が入っています(git の場合は .gitignore に自動で追記します)。
+.delaconfig には秘密の token が入っています(git の場合は .gitignore に自動で追記します)。
 Ctrl+C でトンネルを終了します(URLは次の起動まで無効になります)。
 
 %s
@@ -142,6 +146,7 @@ Ctrl+C でトンネルを終了します(URLは次の起動まで無効になり
 		cyan("dela <port>"),
 		cyan("dela <host:port>"),
 		cyan("-n, --name <名前>"),
+		cyan("-t, --temp"),
 		cyan("-v, --verbose"),
 		bold("管理コマンド:"),
 		cyan("dela list"),
@@ -182,7 +187,7 @@ func writeKnownHosts() (string, error) {
 	return f.Name(), err
 }
 
-func run(target, label string, verbose bool) {
+func run(target, label string, verbose, temp bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -196,14 +201,17 @@ func run(target, label string, verbose bool) {
 		cancel()
 	}()
 
-	proj, projPath, created, ignored, err := loadOrCreateProject()
+	proj, projPath, created, ignored, err := loadOrCreateProject(temp)
 	if err != nil {
 		fail(err)
 	}
-	if created {
+	if temp {
+		defer releaseID(proj)
+		out(fmt.Sprintf("  %s %s\n\n", yellow("!"), "一時モード: .delaconfig は使わず、終了すると URL は破棄されます。"))
+	} else if created {
 		out(fmt.Sprintf("  %s %s %s\n", green("✓"), "このプロジェクト用のサブドメインを発行しました:", dim(projPath)))
 		if ignored {
-			out(dim("    (秘密の token を含むので .gitignore に .dela を追記しました)") + "\n")
+			out(dim("    (秘密の token を含むので .gitignore に .delaconfig を追記しました)") + "\n")
 		}
 		out("\n")
 	}
