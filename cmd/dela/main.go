@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -54,7 +55,7 @@ func main() {
 		printUsage()
 		return
 	case "list":
-		cmdList()
+		cmdList(os.Args[2:])
 		return
 	case "stop":
 		cmdStop(os.Args[2:])
@@ -63,7 +64,7 @@ func main() {
 		cmdRenew()
 		return
 	case "info":
-		cmdInfo()
+		cmdInfo(os.Args[2:])
 		return
 	case "version", "-V":
 		cmdVersion()
@@ -198,10 +199,10 @@ Ctrl+C でトンネルを終了します(URLは次の起動まで無効になり
 		cyan("--no-reconnect"),
 		cyan("-v, --verbose"),
 		bold("管理コマンド:"),
-		cyan("dela list"),
+		cyan("dela list [--json]"),
 		cyan("dela stop <PID>"),
 		cyan("dela stop --all"),
-		cyan("dela info"),
+		cyan("dela info [--json]"),
 		cyan("dela renew"),
 		cyan("dela version"),
 		bold("事前準備:"),
@@ -265,6 +266,11 @@ func run(target, label string, verbose, temp bool, opts options) {
 		out("\n")
 	}
 
+	projDir := ""
+	if projPath != "" {
+		projDir = filepath.Dir(projPath)
+	}
+
 	knownHosts, err := writeKnownHosts()
 	if err != nil {
 		fail(err)
@@ -303,7 +309,7 @@ func run(target, label string, verbose, temp bool, opts options) {
 	for {
 		connected, err := session(ctx, sessionArgs{
 			proj: proj, label: label, target: target, forward: forward, knownHosts: knownHosts,
-			verbose: verbose, first: !everConnected, extra: extra,
+			verbose: verbose, first: !everConnected, extra: extra, dir: projDir, temp: temp,
 		})
 		if ctx.Err() != nil {
 			if everConnected {
@@ -351,6 +357,8 @@ type sessionArgs struct {
 	knownHosts             string
 	verbose, first         bool
 	extra                  []string
+	dir                    string // .delaconfig のあるフォルダ(--temp では空)
+	temp                   bool
 }
 
 // session は ssh を1回起動し、切れるまで待つ。URL が確立したら connected=true を返す。
@@ -412,7 +420,7 @@ func session(ctx context.Context, a sessionArgs) (connected bool, err error) {
 			sp.stop()
 			if a.first {
 				printBanner(m, a.target, a.extra)
-				registerTunnel(m, a.target)
+				registerTunnel(m, a.target, a.label, a.dir, a.temp)
 			} else {
 				out(fmt.Sprintf("  %s 再接続しました: %s\n", green("✓"), cyan(m)))
 			}

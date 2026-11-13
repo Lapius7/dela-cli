@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 )
@@ -11,11 +13,67 @@ import (
 // cliVersion は npm 版では -ldflags "-X main.cliVersion=..." で埋め込む
 var cliVersion = "0.2.0"
 
-// dela list: このPCから起動中のトンネル一覧を表示する
-func cmdList() {
+// hasFlag は args に flag が含まれるかを返す
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
+}
+
+// printJSON は v を 1 行の JSON で標準出力へ書く(他のツールから読む用。色や案内文は混ぜない)
+func printJSON(v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		fail(err)
+	}
+	fmt.Println(string(b))
+}
+
+// tunnelJSON は dela list --json の 1 件分
+type tunnelJSON struct {
+	PID       int       `json:"pid"`
+	URL       string    `json:"url"`
+	Name      string    `json:"name"`
+	Target    string    `json:"target"`
+	Dir       string    `json:"dir"`
+	Temp      bool      `json:"temp"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+func toTunnelJSON(r tunnelRecord) tunnelJSON {
+	name := r.Name
+	if name == "" {
+		name = nameFromURL(r.URL)
+	}
+	return tunnelJSON{PID: r.PID, URL: r.URL, Name: name, Target: r.Target, Dir: r.Dir, Temp: r.Temp, StartedAt: r.StartedAt}
+}
+
+// nameFromURL は https://<name>-<id>.host の <name> を返す(古い記録に name が無いとき用)
+func nameFromURL(u string) string {
+	host := strings.TrimPrefix(u, "https://")
+	host, _, _ = strings.Cut(host, ".")
+	if i := strings.LastIndex(host, "-"); i > 0 {
+		return host[:i]
+	}
+	return host
+}
+
+// dela list: このPCから起動中のトンネル一覧を表示する(--json で機械向けの JSON 配列)
+func cmdList(args []string) {
 	recs, err := listTunnels()
 	if err != nil {
 		fail(fmt.Errorf("一覧の取得に失敗しました: %w", err))
+	}
+	if hasFlag(args, "--json") {
+		list := make([]tunnelJSON, 0, len(recs))
+		for _, r := range recs {
+			list = append(list, toTunnelJSON(r))
+		}
+		printJSON(list)
+		return
 	}
 	if len(recs) == 0 {
 		out(dim("実行中のトンネルはありません。") + "\n")

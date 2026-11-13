@@ -113,7 +113,7 @@ dela --help
 ```
 dela 3000                 → https://app-xxxxxxxxxx.try.lapius7.si
 dela 4000 --name api      → https://api-xxxxxxxxxx.try.lapius7.si   (同じプロジェクトで別サービス)
-dela info                 このプロジェクトの URL を表示
+dela info                 このプロジェクトの URL を表示(--json で、公開中のサービスも含めた JSON。token は出さない)
 dela renew                サブドメイン(ID)を作り直す。古い URL は無効になる
 dela 3000 --temp          一時モード(下記)
 ```
@@ -160,7 +160,7 @@ DELA_AUTH=demo:s3cret dela 3000      # 環境変数でも指定できる(シェ�
 別のターミナルからも一覧・停止ができる(デーモンは無い。各`dela`プロセス自身が記録の作成・削除を行う)。
 
 ```
-dela list             起動中のトンネル一覧(PID・URL・転送先・経過時間)
+dela list             起動中のトンネル一覧(PID・URL・転送先・経過時間)。--json で JSON 配列(pid・url・name・target・dir・temp・started_at)
 dela stop <PID>       指定したPIDのトンネルを停止する
 dela stop --all       すべてのトンネルを停止する
 dela version          バージョンを表示する

@@ -16,6 +16,10 @@ type tunnelRecord struct {
 	URL       string    `json:"url"`
 	Target    string    `json:"target"`
 	StartedAt time.Time `json:"started_at"`
+	// 以下は v0.5.0 で追加(古い記録には無いので omitempty)。dela list --json / info --json で使う
+	Name string `json:"name,omitempty"` // --name の値(既定は app)
+	Dir  string `json:"dir,omitempty"`  // .delaconfig のあるフォルダ。--temp のときは空
+	Temp bool   `json:"temp,omitempty"`
 }
 
 func stateDir() (string, error) {
@@ -40,12 +44,12 @@ func stateFile(pid int) (string, error) {
 
 // registerTunnel/unregisterTunnelはベストエフォート(失敗してもトンネル自体の
 // 動作には影響させない。list/stopが多少不正確になるだけ)。
-func registerTunnel(url, target string) {
+func registerTunnel(url, target, name, dir string, temp bool) {
 	path, err := stateFile(os.Getpid())
 	if err != nil {
 		return
 	}
-	rec := tunnelRecord{PID: os.Getpid(), URL: url, Target: target, StartedAt: time.Now()}
+	rec := tunnelRecord{PID: os.Getpid(), URL: url, Target: target, StartedAt: time.Now(), Name: name, Dir: dir, Temp: temp}
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return

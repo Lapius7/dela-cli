@@ -212,16 +212,43 @@ func cmdRenew() {
 	out(fmt.Sprintf("%s サブドメインを再発行しました\n    %s\n    %s\n", green("✓"), bold(cyan(projectURL(defaultLabel, np.ID))), dim("(古い URL は無効です)")))
 }
 
-// dela info: このプロジェクトに割り当てられている URL を表示する
-func cmdInfo() {
+// infoJSON は dela info --json の出力。token は含めない
+type infoJSON struct {
+	Found   bool         `json:"found"`
+	Dir     string       `json:"dir,omitempty"`
+	ID      string       `json:"id,omitempty"`
+	URL     string       `json:"url,omitempty"` // 名前を付けない(app)ときの URL
+	Running []tunnelJSON `json:"running"`       // このプロジェクトで公開中のもの(--name の別サービスも含む)
+}
+
+// dela info: このプロジェクトに割り当てられている URL を表示する(--json で機械向け)
+func cmdInfo(args []string) {
+	asJSON := hasFlag(args, "--json")
 	path, ok := findProjectFile()
 	if !ok {
+		if asJSON {
+			printJSON(infoJSON{Running: []tunnelJSON{}})
+			return
+		}
 		out(dim("このプロジェクトにはまだ .delaconfig がありません。dela <port> を実行すると自動で作られます。") + "\n")
 		return
 	}
 	p, err := readProjectFile(path)
 	if err != nil {
 		fail(err)
+	}
+	if asJSON {
+		dir := filepath.Dir(path)
+		res := infoJSON{Found: true, Dir: dir, ID: p.ID, URL: projectURL(defaultLabel, p.ID), Running: []tunnelJSON{}}
+		if recs, err := listTunnels(); err == nil {
+			for _, r := range recs {
+				if !r.Temp && r.Dir == dir {
+					res.Running = append(res.Running, toTunnelJSON(r))
+				}
+			}
+		}
+		printJSON(res)
+		return
 	}
 	out(fmt.Sprintf("%s\n    %s\n    %s\n", dim(path), bold(cyan(projectURL(defaultLabel, p.ID))), dim("別のサービスは dela <port> --name <名前> で <名前>-"+p.ID+" になります")))
 }
