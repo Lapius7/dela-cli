@@ -25,7 +25,6 @@ const (
 type projectID struct {
 	ID    string `json:"id"`
 	Token string `json:"token"`
-	Host  string `json:"host,omitempty"`
 }
 
 var labelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?$`)
@@ -89,7 +88,6 @@ func readProjectFile(path string) (projectID, error) {
 }
 
 func writeProjectFile(path string, p projectID) error {
-	p.Host = tunnelHost
 	b, _ := json.MarshalIndent(p, "", "  ")
 	return os.WriteFile(path, append(b, '\n'), 0o600)
 }
