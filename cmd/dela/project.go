@@ -36,12 +36,24 @@ func validateLabel(l string) error {
 	return nil
 }
 
-// envConfigPath は環境変数 DELA_CONFIG(.delaconfig の保存先ファイルのパス)。空なら従来どおりフォルダから探す。
+// configFlag は --config <パス> の値(DELA_CONFIG より優先)
+var configFlag string
+
+// envConfigPath は --config / 環境変数 DELA_CONFIG(.delaconfig の保存先ファイルのパス)。空なら従来どおりフォルダから探す。
 // 指定したときは、フォルダの探索も .gitignore への追記もせず、このファイルだけを使う(無ければここに作る)。
 func envConfigPath() string {
-	p := strings.TrimSpace(os.Getenv("DELA_CONFIG"))
+	p := strings.TrimSpace(configFlag)
+	if p == "" {
+		p = strings.TrimSpace(os.Getenv("DELA_CONFIG"))
+	}
 	if p == "" {
 		return ""
+	}
+	// 先頭の ~ は dela が展開する(シェルによって ~ の扱いが違う Windows でも同じ書き方ができる)
+	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, p[1:])
+		}
 	}
 	if abs, err := filepath.Abs(p); err == nil {
 		return abs

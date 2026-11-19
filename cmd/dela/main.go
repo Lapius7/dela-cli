@@ -42,6 +42,7 @@ func out(s string) {
 }
 
 func main() {
+	extractConfigFlag()
 	if maybeAskpass() {
 		return
 	}
@@ -179,8 +180,8 @@ func printUsage() {
 初回の実行で、プロジェクトのフォルダ(git ならルート)に .delaconfig ができ、サーバーが発行した
 サブドメインが保存されます。以降は同じプロジェクトなら毎回同じ URL(app-xxxx.try.lapius7.si)です。
 .delaconfig には秘密の token が入っています(git の場合は .gitignore に自動で追記します)。
-環境変数 DELA_CONFIG=<ファイルのパス> を付けると、.delaconfig の代わりにそのファイルを使います
-(フォルダを探さず、無ければそこに作ります。dela info / renew も同じファイルを見ます)。
+--config <ファイルのパス>(環境変数 DELA_CONFIG でも指定可。先頭の ~ は展開)を付けると、.delaconfig の代わりに
+そのファイルを使います(フォルダを探さず、無ければそこに作ります。dela info / renew も同じ指定で同じファイルを見ます)。
 Ctrl+C でトンネルを終了します(URLは次の起動まで無効になります)。
 
 %s
@@ -476,4 +477,26 @@ func printShutdown(hadTunnel bool) {
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, red("エラー:"), err)
 	os.Exit(1)
+}
+
+// --config <パス> / --config=<パス> を、どの位置にあっても取り出して os.Args から外す(info・renew・list・公開のすべてで使える)
+func extractConfigFlag() {
+	rest := os.Args[:1:1]
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--config":
+			if i+1 >= len(args) {
+				fail(fmt.Errorf("--config には .delaconfig の保存先のパスを指定してください"))
+			}
+			i++
+			configFlag = args[i]
+		case strings.HasPrefix(a, "--config="):
+			configFlag = strings.TrimPrefix(a, "--config=")
+		default:
+			rest = append(rest, a)
+		}
+	}
+	os.Args = rest
 }
