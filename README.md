@@ -113,6 +113,7 @@ dela --help
 ```
 dela 3000                 → https://app-xxxxxxxxxx.try.lapius7.si
 dela 4000 --name api      → https://api-xxxxxxxxxx.try.lapius7.si   (同じプロジェクトで別サービス)
+dela 3000 --config ~/.dela/projects/app.delaconfig   (.delaconfig の場所を指定。フォルダを探さず、無ければ作る。環境変数 DELA_CONFIG でも指定可)
 dela info                 このプロジェクトの URL を表示(--json で、公開中のサービスも含めた JSON。token は出さない)
 dela renew                サブドメイン(ID)を作り直す。古い URL は無効になる
 dela 3000 --temp          一時モード(下記)
