@@ -36,8 +36,35 @@ func validateLabel(l string) error {
 	return nil
 }
 
-// カレントディレクトリから親に向かって .delaconfig を探す
+// envConfigPath は環境変数 DELA_CONFIG(.delaconfig の保存先ファイルのパス)。空なら従来どおりフォルダから探す。
+// 指定したときは、フォルダの探索も .gitignore への追記もせず、このファイルだけを使う(無ければここに作る)。
+func envConfigPath() string {
+	p := strings.TrimSpace(os.Getenv("DELA_CONFIG"))
+	if p == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
+}
+
+// projectKey は state の dir に入れる識別子。DELA_CONFIG のときは設定ファイルのパス、そうでなければそのフォルダ
+func projectKey(path string) string {
+	if envConfigPath() != "" {
+		return path
+	}
+	return filepath.Dir(path)
+}
+
+// カレントディレクトリから親に向かって .delaconfig を探す(DELA_CONFIG があればそのファイルだけ)
 func findProjectFile() (string, bool) {
+	if p := envConfigPath(); p != "" {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, true
+		}
+		return "", false
+	}
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", false
@@ -178,6 +205,16 @@ func loadOrCreateProject(temp bool) (p projectID, path string, created bool, ign
 	if err != nil {
 		return
 	}
+	if ep := envConfigPath(); ep != "" {
+		if err = os.MkdirAll(filepath.Dir(ep), 0o700); err == nil {
+			err = writeProjectFile(ep, p)
+		}
+		if err != nil {
+			err = fmt.Errorf("%s を保存できませんでした: %w", ep, err)
+			return
+		}
+		return p, ep, true, false, nil
+	}
 	dir := newProjectDir()
 	path = filepath.Join(dir, projectFileName)
 	if err = writeProjectFile(path, p); err != nil {
@@ -238,7 +275,7 @@ func cmdInfo(args []string) {
 		fail(err)
 	}
 	if asJSON {
-		dir := filepath.Dir(path)
+		dir := projectKey(path)
 		res := infoJSON{Found: true, Dir: dir, ID: p.ID, URL: projectURL(defaultLabel, p.ID), Running: []tunnelJSON{}}
 		if recs, err := listTunnels(); err == nil {
 			for _, r := range recs {

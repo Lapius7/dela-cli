@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -180,6 +179,8 @@ func printUsage() {
 初回の実行で、プロジェクトのフォルダ(git ならルート)に .delaconfig ができ、サーバーが発行した
 サブドメインが保存されます。以降は同じプロジェクトなら毎回同じ URL(app-xxxx.try.lapius7.si)です。
 .delaconfig には秘密の token が入っています(git の場合は .gitignore に自動で追記します)。
+環境変数 DELA_CONFIG=<ファイルのパス> を付けると、.delaconfig の代わりにそのファイルを使います
+(フォルダを探さず、無ければそこに作ります。dela info / renew も同じファイルを見ます)。
 Ctrl+C でトンネルを終了します(URLは次の起動まで無効になります)。
 
 %s
@@ -268,7 +269,7 @@ func run(target, label string, verbose, temp bool, opts options) {
 
 	projDir := ""
 	if projPath != "" {
-		projDir = filepath.Dir(projPath)
+		projDir = projectKey(projPath)
 	}
 
 	knownHosts, err := writeKnownHosts()
