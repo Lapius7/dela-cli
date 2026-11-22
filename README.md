@@ -1,17 +1,43 @@
+<div align="center">
+
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Lapius7/dela-cli/main/docs/hero-dark.png">
-    <img alt="dela — ローカルのポートを https://app-xxxx.try.lapius7.si で公開" src="https://raw.githubusercontent.com/Lapius7/dela-cli/main/docs/hero-light.png" width="900">
-  </picture>
+  <img src="docs/images/banner.png" alt="dela CLI" width="100%">
 </p>
 
-# dela — ローカルのポートを一時的に HTTPS 公開
+<p align="center"><b>English</b> | <a href="README.ja.md">日本語</a></p>
 
-登録も SSH 鍵も不要。`dela 3000` を実行するだけで、ローカルのポートが
-`https://app-xxxxxxxxxx.try.lapius7.si` として即座に公開されます(`try.cloudflare.com` の `cloudflared tunnel --url` に近い使い心地)。
-URL はプロジェクトごとに固定で、リクエストの確認(`--inspect`)・パスワード保護(`--auth`)・自動再接続にも対応しています。
+<h1 align="center">dela CLI</h1>
 
-詳しい使い方: **https://try.lapius7.si/use**
+<h3 align="center">Publish a local port as a temporary HTTPS URL.</h3>
+
+<p align="center">Run <code>dela 3000</code> and <code>localhost:3000</code> is reachable at <code>https://app-xxxxxxxxxx.try.lapius7.si</code>. No account and no SSH key are needed.</p>
+
+<p align="center">
+  <a href="https://github.com/Lapius7/dela-cli/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Lapius7/dela-cli?label=release&style=flat-square&color=e8833a&logo=github"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/Lapius7/dela-cli?style=flat-square&color=97ca00"></a>
+  <a href="https://go.dev"><img alt="Go" src="https://img.shields.io/badge/Go-stdlib%20only-00add8?logo=go&logoColor=white&style=flat-square"></a>
+  <a href="https://github.com/Lapius7/dela-cli/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Lapius7/dela-cli?style=flat-square&color=e3b341&logo=github"></a>
+  <a href="https://github.com/Lapius7/dela-cli/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/Lapius7/dela-cli?style=flat-square&color=3b82f6"></a>
+</p>
+
+<p align="center">
+  <a href="#overview">Overview</a> ·
+  <a href="#requirements">Requirements</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#troubleshooting">Troubleshooting</a> ·
+  <a href="#development">Development</a>
+</p>
+
+</div>
+
+---
+
+## Overview
+
+dela is a tunnel CLI similar to `cloudflared tunnel --url`. It publishes a local port through the tunnel server at `try.lapius7.si` (sish). It is a thin wrapper that runs the system `ssh` command as a subprocess and does not reimplement the SSH protocol.
+
+Full usage guide: <https://try.lapius7.si/use>
 
 ```
 dela 3000
@@ -20,180 +46,149 @@ dela 3000
 ```
 dela · try.lapius7.si
 
-  ✓ トンネルを確立しました
+  ✓ Tunnel established
 
-    🔗  https://app-k3x9q2m7ab.try.lapius7.si
+    https://app-k3x9q2m7ab.try.lapius7.si
         → localhost:3000
 
-  Ctrl+C で終了 · 他のターミナルからは dela list / dela stop で確認・停止できます
+  Ctrl+C to quit · use dela list / dela stop from another terminal
 ```
 
-接続待ちの間はスピナーが回り、確立すると上のようなパネルが表示される(色付き。`NO_COLOR`環境変数か
-非TTY出力では自動的に無色になる)。サブドメインはプロジェクトごとにサーバーが発行し、`.delaconfig`に保存されるので毎回同じURLで公開できる(詳細は「プロジェクトごとのURL」)。`Ctrl+C`で
-トンネルを閉じるとURLは次の起動まで無効になる。サーバー側は検索エンジンにインデックスされないよう
-`noindex`ヘッダー・`robots.txt`を返す。
+The panel is colored. Output has no color when `NO_COLOR` is set or stdout is not a TTY. Pressing `Ctrl+C` closes the tunnel, and the URL stays invalid until the next start. The server returns a `noindex` header and `robots.txt` so search engines do not index it.
 
-## 前提
+## Requirements
 
-- システムに`ssh`コマンドがあること(Windows 10/11・macOS・Linuxに標準搭載)。
-- **登録も SSH 鍵も不要**(誰でも使える公開トンネル)。初回の実行でサーバーがサブドメインを発行し、`.delaconfig`に保存する。手元の鍵・ssh-agent は使われない。`ssh` は 8.4 以降が必要。HTTP(S) のみで、TCP 転送は使えない。IP ごとに同時接続数・接続頻度の上限があり、1 時間通信がないと切断される。データ量が極端に多い場合はサーバー側で制限される(1 リクエストの本文は 100MB まで、1 接続で 100MB を超えた分は 1MB/s に低速化、同一 URL の同時接続は 30 まで)。接続元 IP とサブドメインはサーバー側にログとして記録される。
-- サーバーのホスト鍵はバイナリに固定されており、ホスト鍵の確認プロンプトは出ない(鍵が一致しない場合は接続を拒否する)。
-  フィンガープリント:
+- `ssh` (8.4 or later) on your system. Windows 10/11, macOS, and Linux include it.
+- Only HTTP(S) is supported (no TCP forwarding). The server limits concurrent connections and connection rate per IP, and closes a connection after 1 hour without traffic.
+- No account and no SSH key are needed (anyone can use the public tunnel). On the first run the server issues a subdomain, and dela saves it to `.delaconfig`. dela does not use your SSH keys, `~/.ssh/config`, or ssh-agent.
+- The server's host key is pinned in the binary, so there is no host-key prompt. If the key does not match, dela refuses to connect. Fingerprint:
   ```
   SHA256:TFfR22+f3m4Fpp/5u3svHfC95Srtq+OyhWqylM8ioGc
   ```
-- **公開するポートには、あらかじめローカルでWebサーバー等を起動しておくこと。** `dela`はあくまで
-  転送するだけなので、`localhost:3000`に何も応答するものが無いと`502 Bad Gateway`になる。
+- Start the local server before running dela. dela only forwards traffic, so a port with no listener returns `502 Bad Gateway`.
 
-## インストール
+## Install
 
-### pnpm(推奨)
+### pnpm (recommended)
 
-> このパッケージは **pnpm 前提**です。npm と pnpm の両方に入れると同じコマンドが二重になるため、`pnpm add -g` だけを使ってください。
+This package assumes pnpm. Installing with both npm and pnpm creates the same command twice, so use only `pnpm add -g`.
 
 ```bash
 pnpm add -g @lapius/dela-cli
 ```
 
-Linux / macOS(x64・arm64)/ Windows(x64)のビルド済みバイナリが入る(Go 不要、Node.js 18 以降)。
-更新も同じコマンド(`pnpm add -g @lapius/dela-cli`)で行う。
+This installs a prebuilt binary for Linux, macOS (x64, arm64), or Windows (x64). Go is not required; Node.js 18 or later is. Run the same command to update.
 
-### インストーラースクリプト(Go でソースからビルド)
+### Installer scripts (build from source with Go)
 
-Goがインストールされている環境向け(sca-cliと同じ方式)。
+For machines with Go installed.
 
-#### macOS / Linux / Windows(Git Bash・WSL)
+macOS / Linux / Windows (Git Bash, WSL):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.sh | bash
 ```
 
-#### Windows(PowerShell)
+Windows (PowerShell):
 
 ```powershell
 irm https://raw.githubusercontent.com/lapius7/dela-cli/main/install.ps1 | iex
 ```
 
-#### Windows(コマンドプロンプト / cmd)
-
-cmdは`irm`/`iex`のようなワンライナー実行に対応していないため、一度ファイルとして保存してから実行する:
+Windows (cmd) cannot run a `irm`/`iex` one-liner, so save the file first and run it:
 
 ```bat
 curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.bat -o install.bat && install.bat
 ```
 
-(PowerShellが使える環境では、上のPowerShell版の方が手順が短い)
+Each script runs `go install github.com/lapius7/dela-cli/cmd/dela@latest` with `GOPROXY=direct`. The binary goes to `$(go env GOPATH)/bin` (`%GOPATH%\bin` on Windows). If that directory is not on your PATH, the installer prints a warning. `GOPROXY=direct` is set because the official Go module proxy can cache the `@latest` result for a branch without tags, and an update would then return an old commit for a while. Run the same command again to update.
 
----
-
-どれも内部的に`go install github.com/lapius7/dela-cli/cmd/dela@latest`を`GOPROXY=direct`で実行し、
-`$(go env GOPATH)/bin`(Windowsは`%GOPATH%\bin`)に`dela`(Windowsは`dela.exe`)を配置する。
-このディレクトリにPATHが通っていない場合は、インストーラーが警告を表示するので指示に従うこと。
-`GOPROXY=direct`にしているのは、Goの公式モジュールプロキシがタグの無いブランチの`@latest`解決結果を
-キャッシュすることがあり、更新後もしばらく古いコミットが返ることがあるため(常にGitHubから直接取得させる)。
-
-インストーラーで入れた場合は、同じコマンドをもう一度実行すれば更新できる(`go install`は既存のバイナリを上書きする)。
-
-## 使い方
+## Usage
 
 ```
-dela <port>          例: dela 3000        (localhost:3000 を公開)
-dela <host:port>     例: dela 127.0.0.1:8080
-dela <port> -v       接続の詳細ログも表示する
+dela <port>          e.g. dela 3000        (publishes localhost:3000)
+dela <host:port>     e.g. dela 127.0.0.1:8080
+dela <port> -v       also show the connection log
 dela --help
 ```
 
-### プロジェクトごとのURL
+### Per-project URL
 
-初回の `dela 3000` で、プロジェクトのフォルダ(gitリポジトリならそのルート、なければカレントディレクトリ)に
-`.delaconfig` ファイルができる。サーバーが発行した ID(`app-xxxxxxxxxx.try.lapius7.si` の `xxxxxxxxxx` 部分)と、
-その持ち主であることを示す token が入っていて、**同じプロジェクトなら毎回同じ URL** で公開される
-(サブフォルダから実行しても親の `.delaconfig` を使う)。
+The first `dela 3000` creates a `.delaconfig` file in the project folder (the git root, or the current directory if there is no repository). It holds the ID issued by the server (the `xxxxxxxxxx` part of `app-xxxxxxxxxx.try.lapius7.si`) and a token that proves ownership. The same project gets the same URL every time, and running from a subfolder uses the parent's `.delaconfig`.
 
 ```
 dela 3000                 → https://app-xxxxxxxxxx.try.lapius7.si
-dela 4000 --name api      → https://api-xxxxxxxxxx.try.lapius7.si   (同じプロジェクトで別サービス)
-dela 3000 --config ~/.dela/projects/app.delaconfig   (.delaconfig の場所を指定。フォルダを探さず、無ければ作る。環境変数 DELA_CONFIG でも指定可)
-dela info                 このプロジェクトの URL を表示(--json で、公開中のサービスも含めた JSON。token は出さない)
-dela renew                サブドメイン(ID)を作り直す。古い URL は無効になる
-dela 3000 --temp          一時モード(下記)
+dela 4000 --name api      → https://api-xxxxxxxxxx.try.lapius7.si   (another service in the same project)
+dela 3000 --config ~/.dela/projects/app.delaconfig   (path of .delaconfig; creates it if missing. DELA_CONFIG also works)
+dela info                 show this project's URL (--json adds the running services; the token is not printed)
+dela renew                issue a new subdomain (ID); the old URL stops working
+dela 3000 --temp          temporary mode (below)
 ```
 
-**一時モード** `--temp`(`-t`): `.delaconfig` を読まず・作らず、使い捨ての ID でその場だけ公開する。
-終了すると URL は破棄される(次回は別の URL)。サンプルの共有や、プロジェクトに設定ファイルを残したくないときに使う。
+**Temporary mode** `--temp` (`-t`): dela does not read or create `.delaconfig`, and publishes with a throwaway ID. The URL is discarded when dela exits, and the next run gets a different one. Use it to share a sample or to leave no config file in the project.
 
-- `.delaconfig` には秘密の token が入っている。gitリポジトリでは `.gitignore` に自動で追記される。他人に渡したり、コミットしないこと。
-- ID は他人には使えない(token で認証される)。`.delaconfig` を消すと次回に新しい ID が発行される(古い ID は未使用のまま 90 日で破棄される)。
-- 同じ名前(`app` や `api`)のトンネルを同時に 2 つ起動することはできない。
-- 別の PC で同じ URL を使いたい場合は、`.delaconfig` をそのPCのプロジェクトにコピーする。
+- `.delaconfig` contains a secret token. In a git repository dela appends it to `.gitignore`. Do not share it or commit it.
+- The ID cannot be used by other people (the token authenticates it). If you delete `.delaconfig`, the next run issues a new ID, and the old ID is discarded after 90 days unused.
+- Two tunnels with the same name (`app`, `api`) cannot run at the same time.
+- To use the same URL on another PC, copy `.delaconfig` into that PC's project.
 
-### 自動再接続
+### Auto reconnect
 
-回線の瞬断や PC のスリープなどで切れても、**同じ URL のまま自動で再接続**する(1 秒から 30 秒まで間隔を広げながら再試行)。
-`Ctrl+C` で終了する。再接続したくないときは `--no-reconnect`。
+If the connection drops (a network blip, the PC sleeping), dela reconnects with the same URL, retrying with intervals from 1 to 30 seconds. Quit with `Ctrl+C`. Use `--no-reconnect` to turn it off.
 
-### リクエストの確認(`--inspect` / `-i`)
+### Inspect requests (`--inspect` / `-i`)
 
 ```
 dela 3000 --inspect
 ```
 
-届いたリクエストをターミナルに 1 行ずつ表示し、ブラウザで `http://127.0.0.1:4040`(使用中なら 4041…)を開くと、
-ヘッダー・本文(先頭 64KB、JSON は整形、gzip は展開)を確認できる。Webhook のデバッグに便利。
-`Authorization` / `Cookie` / `Set-Cookie` ヘッダーの値は `[redacted]` に伏せて記録する。
-画面はこの PC の `127.0.0.1` だけで待ち受け、記録はメモリ上のみ(最新 300 件、終了すると消える)。
-ポートを変えるには `--inspect-port 5050`。
+Each incoming request is printed on one line. Open `http://127.0.0.1:4040` (4041 and up if in use) to see headers and body (first 64 KB; JSON is formatted, gzip is decompressed). This is useful for debugging webhooks. Values of `Authorization`, `Cookie`, and `Set-Cookie` are recorded as `[redacted]`. The viewer listens only on `127.0.0.1` of this PC, and records stay in memory (latest 300, gone when dela exits). Change the port with `--inspect-port 5050`.
 
-### パスワード保護(`--auth`)
+### Password protection (`--auth`)
 
 ```
 dela 3000 --auth demo:s3cret
-DELA_AUTH=demo:s3cret dela 3000      # 環境変数でも指定できる(シェルの履歴に残したくないとき)
+DELA_AUTH=demo:s3cret dela 3000      # environment variable (keeps it out of shell history)
 ```
 
-公開 URL にアクセスすると Basic 認証を求める。認証は手元の `dela` が行い(パスワードはサーバーに送られない)、
-通らなかったリクエストはローカルのサーバーに届かない。`--inspect` と併用できる。
-`.delaconfig` には保存されないので、起動のたびに指定する。
+The public URL asks for Basic authentication. The local `dela` checks it, so the password is not sent to the server, and a request that fails never reaches your local server. It works together with `--inspect`. The value is not saved to `.delaconfig`, so pass it on every start.
 
-### 管理コマンド
+### Manage tunnels
 
-このPCで起動中のトンネルは、`~/.dela/state/`にプロセスごとの記録として残るので、
-別のターミナルからも一覧・停止ができる(デーモンは無い。各`dela`プロセス自身が記録の作成・削除を行う)。
+Running tunnels leave one record per process in `~/.dela/state/`, so another terminal can list and stop them. There is no daemon: each `dela` process creates and removes its own record.
 
 ```
-dela list             起動中のトンネル一覧(PID・URL・転送先・経過時間)。--json で JSON 配列(pid・url・name・target・dir・temp・started_at)
-dela stop <PID>       指定したPIDのトンネルを停止する
-dela stop --all       すべてのトンネルを停止する
-dela version          バージョンを表示する
+dela list             running tunnels (PID, URL, target, elapsed). --json prints a JSON array (pid, url, name, target, dir, temp, started_at)
+dela stop <PID>       stop the tunnel with that PID
+dela stop --all       stop all tunnels
+dela version          show the version
 ```
 
-## トラブルシューティング
+## Troubleshooting
 
-- **`502 Bad Gateway`が出る**: トンネル自体は正常に繋がっている。指定したポートに実際のサーバーが
-  起動していないだけなので、まず`http://localhost:<port>/`がローカルで開けるか確認すること。
-- **`go install`しても変更が反映されない**: Goの公式モジュールプロキシのキャッシュが原因のことがある。
-  `$env:GOPROXY = "direct"`(PowerShell)や`GOPROXY=direct`(bash)を付けて`go install`し直すこと
-  (各インストーラーは既にこれを行っている)。
+- **`502 Bad Gateway`**: The tunnel itself is working. Nothing is listening on the port you gave. Check that `http://localhost:<port>/` opens locally.
+- **A change does not appear after `go install`**: The Go module proxy cache can be the cause. Run `go install` again with `GOPROXY=direct` (bash) or `$env:GOPROXY = "direct"` (PowerShell). The installers already do this.
 
-## 構成
+## Development
 
-システムの`ssh`コマンドを呼び出す薄いラッパーで、SSHプロトコル自体は自前実装せず
-サブプロセスとして呼び出す(`cmd/dela/`)。色付け・スピナーもGo標準ライブラリのみの自前実装で、
-外部依存は無い(sca-cliと同じ方針)。
+The code lives in `cmd/dela/` and uses only the Go standard library, with no external dependencies.
 
-| ファイル | 役割 |
+| File | Role |
 |---|---|
-| `main.go` | エントリポイント。ssh呼び出し・出力整形・シグナル処理 |
-| `style.go` | ANSI色付けヘルパー(`NO_COLOR`・非TTY自動判定) |
-| `spinner.go` | 接続待ち中のスピナー表示 |
-| `state.go` | `dela list`/`stop`用のローカル状態ファイル(`~/.dela/state/`)管理 |
-| `project.go` | `.delaconfig`(プロジェクトID)の読み書き・サーバーでの発行/解放・`dela renew`/`info`・ssh パスワード入力(SSH_ASKPASS)の代行 |
-| `proxy.go` / `inspect.html` | `--auth` と `--inspect` のためのローカルリバースプロキシ・リクエスト記録・確認画面 |
-| `commands.go` | `list`/`stop`/`version`コマンドの実装 |
-| `procalive_unix.go` / `procalive_windows.go` | プロセスの生死確認(OS別実装) |
+| `main.go` | Entry point: ssh invocation, output formatting, signal handling |
+| `style.go` | ANSI coloring (`NO_COLOR` and non-TTY detection) |
+| `spinner.go` | Spinner while connecting |
+| `state.go` | Local state files for `dela list` / `stop` (`~/.dela/state/`) |
+| `project.go` | Reading and writing `.delaconfig`, issuing and releasing IDs on the server, `dela renew` / `info`, handling the ssh password prompt (SSH_ASKPASS) |
+| `proxy.go`, `inspect.html` | Local reverse proxy for `--auth` and `--inspect`, request recording, viewer page |
+| `commands.go` | `list`, `stop`, `version` |
+| `procalive_unix.go`, `procalive_windows.go` | Process liveness check per OS |
 
-## サーバー側(参考)
+`server/registry.py` is a small HTTP service that issues IDs (Python standard library and SQLite). It uses sish's `--authentication-password-request-url` and `--append-user-to-subdomain`: the username is the ID, the password is the token, and the public host name becomes `<name>-<ID>.<domain>`. Tokens are stored as SHA-256.
 
-`server/registry.py` は ID を発行する小さな HTTP サービス(Python 標準ライブラリのみ、SQLite)。sish の
-`--authentication-password-request-url` と `--append-user-to-subdomain` で、ユーザー名=ID・パスワード=token
-として認証し、公開されるホスト名を `<名前>-<ID>.<ドメイン>` に固定する。token は SHA-256 で保存する。
+> [!NOTE]
+> Unverified: this rewrite did not run dela against the live server, and the pinned host-key fingerprint and the 90-day ID expiry are taken from the existing README and code, not retested.
+
+## License
+
+[MIT](LICENSE)
