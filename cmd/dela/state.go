@@ -116,9 +116,13 @@ func removeStateFileFor(pid int) {
 
 // findDuplicate は同じプロジェクト ID・同じ名前・同じ種類(HTTP/TCP)で、既に起動中のトンネルを探す。
 // ID を持たない古い記録は判定に使わない。
-func findDuplicate(recs []tunnelRecord, id, name, kind string) (tunnelRecord, bool) {
+func findDuplicate(recs []tunnelRecord, id, name, kind string, replica bool) (tunnelRecord, bool) {
 	for _, r := range recs {
 		if r.ID == "" || r.ID != id || r.Name != name || r.Kind != kind || r.PID == os.Getpid() {
+			continue
+		}
+		// 新しい起動も既存も --replica なら共存できる。どちらかが欠けていれば衝突
+		if replica && r.Replica {
 			continue
 		}
 		return r, true

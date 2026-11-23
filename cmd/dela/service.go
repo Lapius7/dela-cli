@@ -51,6 +51,7 @@ func buildServicePlan(goos string, s serviceSpec, home string, uid int) (service
 			InstallCmds: [][]string{
 				{"systemctl", "--user", "daemon-reload"},
 				{"systemctl", "--user", "enable", "--now", s.Name + ".service"},
+				{"systemctl", "--user", "restart", s.Name + ".service"}, // 再インストールで新しい定義を反映する
 			},
 			UninstallCmds: [][]string{
 				{"systemctl", "--user", "disable", "--now", s.Name + ".service"},
@@ -79,6 +80,8 @@ func buildServicePlan(goos string, s serviceSpec, home string, uid int) (service
 		return servicePlan{
 			InstallCmds: [][]string{
 				{"schtasks", "/Create", "/TN", s.Name, "/TR", tr, "/SC", "ONLOGON", "/RL", "LIMITED", "/F"},
+				// 既定では 72 時間で止められるので、実行時間の上限を外す
+				{"powershell", "-NoProfile", "-Command", "$t=Get-ScheduledTask -TaskName '" + s.Name + "'; $t.Settings.ExecutionTimeLimit='PT0S'; Set-ScheduledTask -InputObject $t | Out-Null"},
 				{"schtasks", "/Run", "/TN", s.Name},
 			},
 			UninstallCmds: [][]string{
@@ -154,13 +157,38 @@ func windowsTaskCommand(s serviceSpec) string {
 		if a != "" && !strings.ContainsAny(a, " \t\"") {
 			return a
 		}
-		return `"` + strings.ReplaceAll(a, `"`, `\"`) + `"`
+		return winQuote(a)
 	}
 	parts := []string{q(s.Exe)}
 	for _, a := range s.Args {
 		parts = append(parts, q(a))
 	}
 	return strings.Join(parts, " ")
+}
+
+// winQuote は Windows のコマンドライン規則(CommandLineToArgvW)で1引数を囲む。
+// 引用符の直前と末尾のバックスラッシュは二重にする。
+func winQuote(a string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	bs := 0
+	for _, r := range a {
+		switch r {
+		case '\\':
+			bs++
+			b.WriteRune(r)
+		case '"':
+			b.WriteString(strings.Repeat(`\`, bs+1))
+			b.WriteByte('"')
+			bs = 0
+		default:
+			bs = 0
+			b.WriteRune(r)
+		}
+	}
+	b.WriteString(strings.Repeat(`\`, bs))
+	b.WriteByte('"')
+	return b.String()
 }
 
 // parseServiceTarget は uninstall / status の引数から、対象の種類(tcp)と名前を取り出す

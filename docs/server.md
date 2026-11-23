@@ -48,5 +48,5 @@ Because the setting is global, enabling `--http-load-balancer` also lets two del
 ## Not verified
 
 - sish flag behavior (`--bind-random-ports=false`, `--port-bind-range`, the load balancers) on a running server.
-- The text sish prints for a TCP forward. dela treats a line containing `try.lapius7.si:<port>` as "established", and otherwise assumes it is established when `ssh` is still alive 8 seconds after start (`ExitOnForwardFailure=yes` makes a failed forward exit sooner).
+- The text sish prints for a TCP forward. dela treats a line containing `try.lapius7.si:<port>` as "established", and otherwise assumes it is established when `ssh` is still alive 16 seconds after start (`ExitOnForwardFailure=yes` makes a failed forward exit sooner).
 - The nginx route above on the production server.

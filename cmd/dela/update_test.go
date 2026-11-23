@@ -176,3 +176,18 @@ func TestApplyUpdate(t *testing.T) {
 		t.Errorf("checksums.txt に記載が無ければ更新しない: %s %v", got, err)
 	}
 }
+
+func TestNewerVersionPrerelease(t *testing.T) {
+	cases := []struct {
+		cur, latest string
+		want        bool
+	}{
+		{"0.3.0-rc1", "v0.3.0", true}, {"0.3.0", "v0.3.0-rc1", false},
+		{"0.3.0-rc1", "v0.3.0-rc2", true}, {"0.3.0-rc2", "v0.3.0-rc2", false},
+	}
+	for _, c := range cases {
+		if got, err := newerVersion(c.cur, c.latest); err != nil || got != c.want {
+			t.Errorf("%s→%s: %v %v", c.cur, c.latest, got, err)
+		}
+	}
+}

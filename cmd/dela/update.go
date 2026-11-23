@@ -81,6 +81,13 @@ func parseVersion(v string) ([3]int, bool) {
 	return out, true
 }
 
+func prereleaseOf(v string) string {
+	_, pre, _ := strings.Cut(strings.TrimPrefix(strings.TrimSpace(v), "v"), "-")
+	return pre
+}
+
+func hasPrerelease(v string) bool { return prereleaseOf(v) != "" }
+
 // newerVersion は latest が current より新しいかを返す。どちらかが読めないときはエラー。
 func newerVersion(current, latest string) (bool, error) {
 	c, ok1 := parseVersion(current)
@@ -92,6 +99,14 @@ func newerVersion(current, latest string) (bool, error) {
 		if l[i] != c[i] {
 			return l[i] > c[i], nil
 		}
+	}
+	// 数値が同じなら、正式版はプレリリース(-rc1 など)より新しい
+	cp, lp := hasPrerelease(current), hasPrerelease(latest)
+	if cp && !lp {
+		return true, nil
+	}
+	if cp && lp {
+		return prereleaseOf(latest) > prereleaseOf(current), nil
 	}
 	return false, nil
 }
@@ -182,9 +197,23 @@ func extractBinary(archive []byte, exeName string) ([]byte, error) {
 // replaceExecutable は exePath を data で置き換える。Windows は実行中の exe を上書きできないので、
 // 実行中のものを .old に退避してから新しいものを置く(.old は次回の更新で消す)。
 func replaceExecutable(exePath string, data []byte) error {
-	tmp := exePath + ".new"
-	if err := os.WriteFile(tmp, data, 0o755); err != nil {
+	// 同時に2つの更新が走っても壊れないよう、実行ファイルと同じ場所に固有の一時ファイルを作る
+	f, err := os.CreateTemp(filepath.Dir(exePath), ".dela-new-*")
+	if err != nil {
 		return err
+	}
+	tmp := f.Name()
+	_, werr := f.Write(data)
+	cerr := f.Close()
+	if werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Chmod(tmp, 0o755)
+	}
+	if werr != nil {
+		_ = os.Remove(tmp)
+		return werr
 	}
 	if runtime.GOOS != "windows" {
 		if err := os.Rename(tmp, exePath); err != nil {

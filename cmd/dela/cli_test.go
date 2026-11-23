@@ -108,16 +108,16 @@ func TestFindDuplicate(t *testing.T) {
 		{PID: 2, ID: "abc", Name: "app", Kind: "tcp"},
 		{PID: 3, Name: "app"}, // 古い記録(ID なし)は判定に使わない
 	}
-	if d, ok := findDuplicate(recs, "abc", "app", ""); !ok || d.PID != 1 {
+	if d, ok := findDuplicate(recs, "abc", "app", "", false); !ok || d.PID != 1 {
 		t.Errorf("HTTP の重複: %v %v", d, ok)
 	}
-	if d, ok := findDuplicate(recs, "abc", "app", "tcp"); !ok || d.PID != 2 {
+	if d, ok := findDuplicate(recs, "abc", "app", "tcp", false); !ok || d.PID != 2 {
 		t.Errorf("TCP は別扱い: %v %v", d, ok)
 	}
-	if _, ok := findDuplicate(recs, "abc", "api", ""); ok {
+	if _, ok := findDuplicate(recs, "abc", "api", "", false); ok {
 		t.Error("名前が違えば重複ではない")
 	}
-	if _, ok := findDuplicate(recs, "zzz", "app", ""); ok {
+	if _, ok := findDuplicate(recs, "zzz", "app", "", false); ok {
 		t.Error("ID が違えば重複ではない")
 	}
 	if e := duplicateError(recs[0], false); !strings.Contains(e.Error(), "--replica") {
@@ -134,5 +134,18 @@ func TestToTunnelJSONKind(t *testing.T) {
 	}
 	if j := toTunnelJSON(tunnelRecord{URL: "tcp://" + tunnelHost + ":20000", Name: "ssh", Kind: "tcp", Replica: true}); j.Kind != "tcp" || !j.Replica || j.Name != "ssh" {
 		t.Errorf("%+v", j)
+	}
+}
+
+func TestFindDuplicateReplica(t *testing.T) {
+	recs := []tunnelRecord{{PID: 1, ID: "abc", Name: "app", Replica: true}, {PID: 2, ID: "abc", Name: "app"}}
+	if _, ok := findDuplicate(recs[:1], "abc", "app", "", true); ok {
+		t.Error("両方 --replica なら共存できる")
+	}
+	if d, ok := findDuplicate(recs, "abc", "app", "", true); !ok || d.PID != 2 {
+		t.Errorf("replica でない記録が1つでもあれば衝突: %v %v", d, ok)
+	}
+	if _, ok := findDuplicate(recs[:1], "abc", "app", "", false); !ok {
+		t.Error("新しい起動が --replica でなければ衝突")
 	}
 }

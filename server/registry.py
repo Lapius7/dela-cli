@@ -81,6 +81,12 @@ def tcp_port(id_: str, name: str):
             return 200, port
         except sqlite3.IntegrityError:
             continue
+    # 乱数で埋まりすぎて当たらないときは、空いている最小のポートを順に探す
+    used = {r[0] for r in db.execute("SELECT port FROM tcp_ports")}
+    for port in range(TCP_MIN, TCP_MAX + 1):
+        if port not in used:
+            db.execute("INSERT INTO tcp_ports VALUES (?,?,?)", (id_, name, port))
+            return 200, port
     return 503, None
 
 

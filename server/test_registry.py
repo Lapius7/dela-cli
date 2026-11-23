@@ -52,6 +52,16 @@ class TcpPortTest(unittest.TestCase):
         finally:
             registry.TCP_PER_ID = 3
 
+    def test_last_free_port_found_deterministically(self):
+        registry.TCP_PER_ID = 100
+        try:
+            lo, hi = registry.TCP_MIN, registry.TCP_MAX
+            for i in range(lo, hi):  # 最後の1つだけ空ける
+                registry.db.execute("INSERT INTO tcp_ports VALUES (?,?,?)", ("bbbbbbbbbb", "n%d" % i, i))
+            self.assertEqual(registry.tcp_port("aaaaaaaaaa", "x"), (200, hi))
+        finally:
+            registry.TCP_PER_ID = 3
+
     def test_purge_drops_ports_of_deleted_ids(self):
         registry.tcp_port("aaaaaaaaaa", "ssh")
         registry.db.execute("DELETE FROM ids WHERE id=?", ("aaaaaaaaaa",))

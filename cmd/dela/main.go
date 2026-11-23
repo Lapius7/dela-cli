@@ -240,7 +240,7 @@ func run(target, label string, verbose, temp bool, opts options) {
 	}
 	if !temp {
 		if recs, err := listTunnels(); err == nil {
-			if d, dup := findDuplicate(recs, proj.ID, label, kind); dup {
+			if d, dup := findDuplicate(recs, proj.ID, label, kind, opts.replica); dup {
 				fail(duplicateError(d, opts.replica))
 			}
 		}
@@ -368,7 +368,7 @@ type sessionArgs struct {
 
 // tcpEstablishWait は TCP 転送で、sish の案内行が読めなくても「ssh が生きていれば確立済み」とみなすまでの待ち時間。
 // ExitOnForwardFailure=yes なので、転送に失敗した ssh はここまでに終了する。
-const tcpEstablishWait = 8 * time.Second
+const tcpEstablishWait = 16 * time.Second // ssh の ConnectTimeout(15 秒)より長くする
 
 // sshArgs は ssh に渡す引数を組み立てる(テストできるよう session から分けている)
 func sshArgs(a sessionArgs) []string {
@@ -461,10 +461,11 @@ func session(ctx context.Context, a sessionArgs) (connected bool, err error) {
 	}
 
 	tcpURL := ""
+	var estTimer *time.Timer
 	if a.tcpPort > 0 {
 		tcpURL = fmt.Sprintf("tcp://%s:%d", tunnelHost, a.tcpPort)
-		t := time.AfterFunc(tcpEstablishWait, func() { announce(tcpURL) })
-		defer t.Stop()
+		estTimer = time.AfterFunc(tcpEstablishWait, func() { announce(tcpURL) })
+		defer estTimer.Stop()
 	}
 
 	scanner := bufio.NewScanner(stdout)
@@ -480,6 +481,7 @@ func session(ctx context.Context, a sessionArgs) (connected bool, err error) {
 						continue
 					}
 				} else if !isPrinted() {
+					estTimer.Stop() // 別ポートのままでは確立とみなさない
 					sp.stop()
 					out(fmt.Sprintf("  %s サーバーが別のポート(%s)を割り当てました。サーバー側の --bind-random-ports=false が必要です(docs/server.md)\n", yellow("!"), m[1]))
 					if a.first {

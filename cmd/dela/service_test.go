@@ -121,3 +121,18 @@ func TestParseServiceTarget(t *testing.T) {
 		t.Error("不明な引数")
 	}
 }
+
+func TestWinQuote(t *testing.T) {
+	cases := map[string]string{
+		`a b`:      `"a b"`,
+		`a b\`:     `"a b\\"`,
+		`a"b c`:    `"a\"b c"`,
+		`a\"b c`:   `"a\\\"b c"`,
+		`C:\x y\z`: `"C:\x y\z"`,
+	}
+	for in, want := range cases {
+		if got := winQuote(in); got != want {
+			t.Errorf("%s: got %s, want %s", in, got, want)
+		}
+	}
+}
