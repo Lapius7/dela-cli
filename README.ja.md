@@ -55,7 +55,7 @@ dela · try.lapius7.si
 ## 前提
 
 - システムに `ssh`（8.4 以降）があること。Windows 10/11・macOS・Linux には標準で入っています。
-- 公開できるのは HTTP(S) のみで、TCP 転送は使えません。サーバーは IP ごとに同時接続数と接続頻度を制限し、1 時間通信がない接続を切ります。
+- 既定は HTTP(S) の公開です。`dela tcp <port>` で任意の TCP も公開できます（[TCP 転送](#tcp-転送)）。サーバーは IP ごとに同時接続数と接続頻度を制限し、1 時間通信がない接続を切ります。
 - アカウント登録も SSH 鍵も不要です（誰でも使える公開トンネルです）。初回の実行でサーバーがサブドメインを発行し、dela が `.delaconfig` に保存します。手元の SSH 鍵、`~/.ssh/config`、ssh-agent は使いません。
 - サーバーのホスト鍵はバイナリに固定されているため、ホスト鍵の確認プロンプトは出ません。鍵が一致しなければ接続を拒否します。フィンガープリント:
   ```
@@ -105,6 +105,7 @@ curl -fsSL https://raw.githubusercontent.com/lapius7/dela-cli/main/install.bat -
 dela <port>          例: dela 3000        （localhost:3000 を公開）
 dela <host:port>     例: dela 127.0.0.1:8080
 dela <port> -v       接続のログも表示する
+dela tcp <port>      例: dela tcp 22      （SSH・RDP など任意の TCP を公開。下記）
 dela --help
 ```
 
@@ -125,8 +126,28 @@ dela 3000 --temp          一時モード（下記）
 
 - `.delaconfig` には秘密の token が入っています。git リポジトリでは `.gitignore` に自動で追記されます。他人に渡したり、コミットしたりしないでください。
 - ID は他人には使えません（token で認証されます）。`.delaconfig` を消すと次回に新しい ID が発行され、古い ID は未使用のまま 90 日で破棄されます。
-- 同じ名前（`app` や `api`）のトンネルを、同時に 2 つ起動することはできません。
+- 同じ名前（`app` や `api`）のトンネルは、同時に 2 つ起動できません。すべてに `--replica` を付けたときだけ起動できます（[replica](#replica複数起動と負荷分散)）。
 - 別の PC で同じ URL を使うには、`.delaconfig` をその PC のプロジェクトにコピーします。
+
+### TCP 転送
+
+```
+dela tcp 22                  → tcp://try.lapius7.si:2xxxx   （SSH）
+dela tcp 3389 --name rdp     （RDP。サービスごとに名前を分ける）
+```
+
+`dela tcp <port>`（`<host:port>` も可）は、`ssh -R <公開ポート>:<転送先>` で生の TCP を転送します。公開ポートはレジストリが割り当て、同じプロジェクト ID と `--name` なら毎回同じポートなので、再接続や再起動でもアドレスは変わりません。接続は `ssh -p 2xxxx user@try.lapius7.si` のようにします。`.delaconfig`・`--temp`・`--config`・`--name`・自動再接続・`--metrics-port`・`dela list` / `dela stop` は HTTP と同じように使えます。`--auth` と `--inspect` は HTTP 専用なので、指定するとエラーになります。1 つのプロジェクトで使える TCP の名前は 5 個までです。
+
+> [!WARNING]
+> 公開した TCP ポートには誰でも接続できます。サービス側（鍵・パスワード・ファイアウォール）で守ってください。サーバー側にも追加の設定が必要です（[docs/server.md](docs/server.md)）。
+
+### replica（複数起動と負荷分散）
+
+```
+dela 3000 --replica     # 2 つのターミナル（または同じ .delaconfig を使う 2 台の PC）で実行する
+```
+
+既定では、同じプロジェクト ID と名前のトンネルを 2 つ目に起動しようとするとエラーになります。**すべてのプロセスに** `--replica` を付けると同時に接続でき、サーバー（sish の `--http-load-balancer` / `--tcp-load-balancer`）がリクエストを振り分けます。`--replica` が外すのは dela 側の確認だけで、振り分けそのものはサーバー側の設定です。`--temp` とは併用できません（一時モードは実行ごとに別の ID になるため）。詳しくは [docs/server.md](docs/server.md) を見てください。
 
 ### 自動再接続
 
@@ -148,6 +169,28 @@ DELA_AUTH=demo:s3cret dela 3000      # 環境変数でも指定できる（シ�
 ```
 
 公開 URL にアクセスすると Basic 認証を求めます。認証は手元の dela が行うため、パスワードはサーバーに送られず、通らなかったリクエストはローカルのサーバーに届きません。`--inspect` と併用できます。`.delaconfig` には保存されないので、起動のたびに指定してください。
+
+### メトリクス（`--metrics-port`）
+
+```
+dela 3000 --metrics-port 9100      # http://127.0.0.1:9100/metrics
+```
+
+Prometheus のテキスト形式を `127.0.0.1` だけで公開します（ほかのインターフェースでは待ち受けません）。ローカルのプロキシを起動してリクエストを数えます。出力は `dela_requests_total`、`dela_requests_by_status_total{code}`、`dela_request_duration_seconds`（ヒストグラム）、`dela_tunnel_connected`（1/0）、`dela_reconnects_total`（最初の接続のあとに再接続した回数）です。`dela tcp` では接続の状態だけが意味を持ちます。
+
+### サービス化と更新
+
+```
+dela service install 3000 --name api     # ログイン時に起動し、終了したら再起動する
+dela service install tcp 22 --name ssh
+dela service status [tcp] [--name api]
+dela service uninstall [tcp] [--name api]
+dela update                              # GitHub Releases から更新（--check は確認だけ）
+```
+
+`install` は dela を起動するときと同じ引数を取ります。`.delaconfig` が既にあるか（先に一度 dela を実行しておく）、`--config <パス>` を指定してください。絶対パスをサービスに書き込むので、作業フォルダには依存しません。Linux は systemd のユーザーユニット（`~/.config/systemd/user/dela-<名前>.service`。ログアウト後も動かすには `loginctl enable-linger $USER`）、macOS は LaunchAgent、Windows はタスクスケジューラ（`dela-<名前>`、ログオン時）を使います。管理者権限は要りません。`--temp` は使えません。
+
+`dela update` は、お使いの OS と CPU 向けのリリースアーカイブを取得し、リリースに添付された `checksums.txt` の SHA-256 と一致したときだけ、実行中のバイナリを置き換えます（`checksums.txt` が無いリリースは更新しません）。壊れた・途中で切れたダウンロードは防げますが、リリース自体が改ざんされた場合は防げません。pnpm で入れたものは自己更新しません（`pnpm add -g @lapius/dela-cli` を使ってください）。`go install` で入れたものは常に埋め込みの版を名乗るため、版の比較は当てになりません。
 
 ### トンネルの管理
 
@@ -177,13 +220,17 @@ dela version          バージョンを表示する
 | `state.go` | `dela list` / `stop` 用の状態ファイル（`~/.dela/state/`）の管理 |
 | `project.go` | `.delaconfig` の読み書き、サーバーでの ID の発行と解放、`dela renew` / `info`、ssh のパスワード入力（SSH_ASKPASS）の代行 |
 | `proxy.go`、`inspect.html` | `--auth` と `--inspect` のためのローカルのリバースプロキシ、リクエストの記録、確認画面 |
+| `cli.go` | `dela <port>`・`dela tcp`・`dela service install` で共通の引数の解釈 |
+| `metrics.go` | `--metrics-port`: 127.0.0.1 の Prometheus `/metrics` |
+| `service.go` | `dela service`: systemd / launchd / タスクスケジューラの定義 |
+| `update.go` | `dela update`: ダウンロード、チェックサム検証、自己置き換え |
 | `commands.go` | `list`、`stop`、`version` |
 | `procalive_unix.go`、`procalive_windows.go` | プロセスの生死確認（OS 別） |
 
-`server/registry.py` は、ID を発行する小さな HTTP サービスです（Python の標準ライブラリと SQLite）。sish の `--authentication-password-request-url` と `--append-user-to-subdomain` を使い、ユーザー名を ID、パスワードを token として認証し、公開されるホスト名を `<名前>-<ID>.<ドメイン>` に固定します。token は SHA-256 で保存します。
+`server/registry.py` は、ID を発行する小さな HTTP サービスです（Python の標準ライブラリと SQLite）。sish の `--authentication-password-request-url` と `--append-user-to-subdomain` を使い、ユーザー名を ID、パスワードを token として認証し、公開されるホスト名を `<名前>-<ID>.<ドメイン>` に固定します。token は SHA-256 で保存します。`POST /v1/tcp` は、プロジェクト ID と名前ごとに固定の TCP 公開ポートを 1 つ割り当てます（既定の範囲は 20000〜29999、1 ID あたり 5 個まで）。TCP と負荷分散のサーバー設定は [docs/server.md](docs/server.md) にあります。
 
 > [!NOTE]
-> 未検証: この README の作り直しでは、実際のサーバーに対する dela の動作を確かめていません。固定されたホスト鍵のフィンガープリント、ID の 90 日での破棄は、既存の README とコードの記述によるもので、再確認していません。
+> 未検証: 実際のサーバーに対する dela の動作は確かめていません。固定されたホスト鍵のフィンガープリント、ID の 90 日での破棄は、既存の README とコードの記述によるもので、再確認していません。TCP 転送、`--replica` による負荷分散、レジストリの新しい `/v1/tcp`、`docs/server.md` の sish の設定は、単体テストと sish のドキュメントだけを根拠にしていて、動作中の sish や本番サーバーでは試していません。`dela service` は、生成するユニット・plist・タスクの内容を単体テストで確かめただけで、macOS と Windows に実際に登録してはいません。`dela update` は、手元の疑似リリースサーバーで確かめたもので、GitHub 上では試していません。
 
 ## ライセンス
 

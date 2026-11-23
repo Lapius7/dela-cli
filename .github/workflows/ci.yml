@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod # go.mod の最低版(1.22)で検証する
+      - run: go vet ./...
+      - run: go test ./...
+      - run: |
+          for t in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
+            GOOS=${t%/*} GOARCH=${t#*/} go build -o /dev/null ./cmd/dela
+          done
+  registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 server/test_registry.py

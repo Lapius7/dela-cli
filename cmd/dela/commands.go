@@ -41,6 +41,8 @@ type tunnelJSON struct {
 	Dir       string    `json:"dir"`
 	Temp      bool      `json:"temp"`
 	StartedAt time.Time `json:"started_at"`
+	Kind      string    `json:"kind"`
+	Replica   bool      `json:"replica"`
 }
 
 func toTunnelJSON(r tunnelRecord) tunnelJSON {
@@ -48,7 +50,11 @@ func toTunnelJSON(r tunnelRecord) tunnelJSON {
 	if name == "" {
 		name = nameFromURL(r.URL)
 	}
-	return tunnelJSON{PID: r.PID, URL: r.URL, Name: name, Target: r.Target, Dir: r.Dir, Temp: r.Temp, StartedAt: r.StartedAt}
+	kind := r.Kind
+	if kind == "" {
+		kind = "http"
+	}
+	return tunnelJSON{PID: r.PID, URL: r.URL, Name: name, Target: r.Target, Dir: r.Dir, Temp: r.Temp, StartedAt: r.StartedAt, Kind: kind, Replica: r.Replica}
 }
 
 // nameFromURL は https://<name>-<id>.host の <name> を返す(古い記録に name が無いとき用)
@@ -82,7 +88,11 @@ func cmdList(args []string) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 	fmt.Fprintf(w, "%s\t%s\t%s\t%s\r\n", bold("PID"), bold("URL"), bold("→ 転送先"), bold("経過"))
 	for _, r := range recs {
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\r\n", r.PID, cyan(r.URL), r.Target, dim(humanDuration(time.Since(r.StartedAt))))
+		url := cyan(r.URL)
+		if r.Replica {
+			url += dim(" (replica)")
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\r\n", r.PID, url, r.Target, dim(humanDuration(time.Since(r.StartedAt))))
 	}
 	w.Flush()
 	out("\n" + dim("停止するには: dela stop <PID> または dela stop --all") + "\n")

@@ -30,6 +30,8 @@ jobs:
         run: |
           cd dist/npm
           for d in *-*/; do d=${d%/}; tar -czf "dela-$d.tar.gz" -C "$d/bin" .; done
-          gh release create "$GITHUB_REF_NAME" --generate-notes dela-*.tar.gz
+          # dela update が検証に使うチェックサム
+          sha256sum dela-*.tar.gz > checksums.txt
+          gh release create "$GITHUB_REF_NAME" --generate-notes dela-*.tar.gz checksums.txt
         env:
           GH_TOKEN: ${{ github.token }}
