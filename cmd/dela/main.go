@@ -7,6 +7,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,6 +25,9 @@ type options struct {
 	inspectPort int    // --inspect-port
 	auth        string // --auth user:pass
 	noReconnect bool   // --no-reconnect
+	tcp         bool   // dela tcp <port>
+	replica     bool   // --replica: 同じ名前の複数プロセスをサーバー側で振り分ける
+	metricsPort int    // --metrics-port: Prometheus 形式の /metrics を 127.0.0.1 で公開する
 }
 
 const (
@@ -69,77 +74,28 @@ func main() {
 	case "version", "-V":
 		cmdVersion()
 		return
+	case "service":
+		cmdService(os.Args[2:])
+		return
+	case "update":
+		cmdUpdate(os.Args[2:])
+		return
 	}
 
-	verbose := false
-	label := defaultLabel
-	temp := false
-	opts := options{auth: os.Getenv("DELA_AUTH")}
+	tcp := os.Args[1] == "tcp"
 	args := os.Args[1:]
-	filtered := args[:0:0]
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		switch {
-		case a == "-v" || a == "--verbose":
-			verbose = true
-		case a == "-t" || a == "--temp":
-			temp = true
-		case a == "-i" || a == "--inspect":
-			opts.inspect = true
-		case a == "--no-reconnect":
-			opts.noReconnect = true
-		case a == "--inspect-port" || a == "--auth":
-			if i+1 >= len(args) {
-				fail(fmt.Errorf("%s には値を指定してください", a))
-			}
-			i++
-			setValueOption(&opts, a, args[i])
-		case strings.HasPrefix(a, "--inspect-port=") || strings.HasPrefix(a, "--auth="):
-			kv := strings.SplitN(a, "=", 2)
-			setValueOption(&opts, kv[0], kv[1])
-		case a == "-n" || a == "--name":
-			if i+1 >= len(args) {
-				fail(fmt.Errorf("--name には名前を指定してください(例: --name api)"))
-			}
-			i++
-			label = args[i]
-		case strings.HasPrefix(a, "--name="):
-			label = strings.TrimPrefix(a, "--name=")
-		default:
-			filtered = append(filtered, a)
-		}
+	if tcp {
+		args = args[1:]
 	}
-	if err := validateLabel(label); err != nil {
-		fail(err)
-	}
-	if len(filtered) < 1 {
-		printUsage()
-		os.Exit(2)
-	}
-	target, err := resolveTarget(filtered[0])
+	cfg, err := parseRunArgs(args, tcp)
 	if err != nil {
+		if errors.Is(err, errUsage) {
+			printUsage()
+			os.Exit(2)
+		}
 		fail(err)
 	}
-	if opts.auth != "" {
-		if u, pw, ok := strings.Cut(opts.auth, ":"); !ok || u == "" || pw == "" {
-			fail(fmt.Errorf("--auth は ユーザー名:パスワード の形式で指定してください(例: --auth demo:s3cret)"))
-		}
-	}
-	run(target, label, verbose, temp, opts)
-}
-
-func setValueOption(o *options, name, val string) {
-	switch name {
-	case "--auth":
-		o.auth = val
-	case "--inspect-port":
-		n, err := strconv.Atoi(val)
-		if err != nil || n < 1 || n > 65535 {
-			fail(fmt.Errorf("--inspect-port には 1〜65535 の数値を指定してください"))
-		}
-		o.inspect = true
-		o.inspectPort = n
-	}
+	run(cfg.target, cfg.label, cfg.verbose, cfg.temp, cfg.opts)
 }
 
 // "3000" のようなポート番号だけの指定は localhost:3000 として扱う。
@@ -162,11 +118,14 @@ func printUsage() {
 %s
   %s        例: dela 3000        (localhost:3000 を公開)
   %s   例: dela 127.0.0.1:8080
+  %s     SSH・RDP など任意の TCP を公開する(例: dela tcp 22 → tcp://try.lapius7.si:<port>)
   %s   同じプロジェクト内で別のサービスを公開する(例: --name api)
   %s          一時モード(.delaconfig を作らず、終了で URL を破棄する)
   %s          リクエストを記録して表示する(ブラウザで http://127.0.0.1:4040 も開ける)
   %s   公開 URL に Basic 認証をかける(環境変数 DELA_AUTH でも指定可)
   %s   切断されても自動で再接続しない
+  %s          同じ名前で複数のプロセスを同時に起動し、サーバー側で振り分ける(全員に付ける)
+  %s   Prometheus 形式の /metrics を 127.0.0.1:<port> で公開する
   %s          接続の生ログも表示する
 
 %s
@@ -176,6 +135,8 @@ func printUsage() {
   %s              このプロジェクトの URL を表示する
   %s             サブドメインを作り直す(古い URL は無効になる)
   %s           バージョンを表示する
+  %s    ログイン時に自動で起動するサービスを登録・削除・確認する(例: dela service install 3000)
+  %s             GitHub Releases から最新版に更新する(--check で確認だけ)
 
 初回の実行で、プロジェクトのフォルダ(git ならルート)に .delaconfig ができ、サーバーが発行した
 サブドメインが保存されます。以降は同じプロジェクトなら毎回同じ URL(app-xxxx.try.lapius7.si)です。
@@ -194,11 +155,14 @@ Ctrl+C でトンネルを終了します(URLは次の起動まで無効になり
 		bold("使い方:"),
 		cyan("dela <port>"),
 		cyan("dela <host:port>"),
+		cyan("dela tcp <port>"),
 		cyan("-n, --name <名前>"),
 		cyan("-t, --temp"),
 		cyan("-i, --inspect"),
 		cyan("--auth <user:pass>"),
 		cyan("--no-reconnect"),
+		cyan("--replica"),
+		cyan("--metrics-port <port>"),
 		cyan("-v, --verbose"),
 		bold("管理コマンド:"),
 		cyan("dela list [--json]"),
@@ -207,6 +171,8 @@ Ctrl+C でトンネルを終了します(URLは次の起動まで無効になり
 		cyan("dela info [--json]"),
 		cyan("dela renew"),
 		cyan("dela version"),
+		cyan("dela service install|uninstall|status"),
+		cyan("dela update"),
 		bold("事前準備:"),
 		yellow(hostKeyFingerprint),
 	))
@@ -268,6 +234,25 @@ func run(target, label string, verbose, temp bool, opts options) {
 		out("\n")
 	}
 
+	kind := ""
+	if opts.tcp {
+		kind = "tcp"
+	}
+	if !temp {
+		if recs, err := listTunnels(); err == nil {
+			if d, dup := findDuplicate(recs, proj.ID, label, kind); dup {
+				fail(duplicateError(d, opts.replica))
+			}
+		}
+	}
+	tcpPort := 0
+	if opts.tcp {
+		tcpPort, err = registryTCPPort(proj, label)
+		if err != nil {
+			fail(err)
+		}
+	}
+
 	projDir := ""
 	if projPath != "" {
 		projDir = projectKey(projPath)
@@ -279,11 +264,21 @@ func run(target, label string, verbose, temp bool, opts options) {
 	}
 	defer os.Remove(knownHosts)
 
-	// 認証・inspect を使うときは、間にローカルのプロキシを挟む(再接続しても同じものを使い続ける)
+	// 認証・inspect・メトリクスを使うときは、間にローカルのプロキシを挟む(再接続しても同じものを使い続ける)
 	forward := target
 	var extra []string
-	if opts.auth != "" || opts.inspect {
-		px, err := startProxy(target, opts)
+	var mt *metrics
+	if opts.metricsPort > 0 {
+		mt = newMetrics()
+		ms, err := startMetrics(mt, opts.metricsPort)
+		if err != nil {
+			fail(fmt.Errorf("メトリクスの待ち受けを開始できませんでした: %w", err))
+		}
+		defer ms.close()
+		extra = append(extra, "📈  metrics: http://"+ms.Addr+"/metrics")
+	}
+	if !opts.tcp && (opts.auth != "" || opts.inspect || mt != nil) {
+		px, err := startProxy(target, opts, mt)
 		if err != nil {
 			fail(fmt.Errorf("ローカルプロキシを起動できませんでした: %w", err))
 		}
@@ -302,6 +297,9 @@ func run(target, label string, verbose, temp bool, opts options) {
 			extra = append(extra, "🔍  inspect: http://"+is.Addr)
 		}
 	}
+	if opts.replica {
+		extra = append(extra, "🔀  replica: 同じ名前の他のプロセスと一緒にサーバー側で振り分けられます")
+	}
 
 	out(dim("dela · "+tunnelHost) + "\n\n")
 
@@ -312,7 +310,9 @@ func run(target, label string, verbose, temp bool, opts options) {
 		connected, err := session(ctx, sessionArgs{
 			proj: proj, label: label, target: target, forward: forward, knownHosts: knownHosts,
 			verbose: verbose, first: !everConnected, extra: extra, dir: projDir, temp: temp,
+			tcpPort: tcpPort, replica: opts.replica, metrics: mt,
 		})
+		mt.setConnected(false, false)
 		if ctx.Err() != nil {
 			if everConnected {
 				unregisterTunnel()
@@ -361,19 +361,30 @@ type sessionArgs struct {
 	extra                  []string
 	dir                    string // .delaconfig のあるフォルダ(--temp では空)
 	temp                   bool
+	tcpPort                int // 0 以外なら TCP 転送(レジストリが割り当てた公開ポート)
+	replica                bool
+	metrics                *metrics
 }
 
-// session は ssh を1回起動し、切れるまで待つ。URL が確立したら connected=true を返す。
-func session(ctx context.Context, a sessionArgs) (connected bool, err error) {
-	cmd := exec.CommandContext(ctx, "ssh",
+// tcpEstablishWait は TCP 転送で、sish の案内行が読めなくても「ssh が生きていれば確立済み」とみなすまでの待ち時間。
+// ExitOnForwardFailure=yes なので、転送に失敗した ssh はここまでに終了する。
+const tcpEstablishWait = 8 * time.Second
+
+// sshArgs は ssh に渡す引数を組み立てる(テストできるよう session から分けている)
+func sshArgs(a sessionArgs) []string {
+	remote := a.label + ":80:" + a.forward
+	if a.tcpPort > 0 {
+		remote = fmt.Sprintf("%d:%s", a.tcpPort, a.target)
+	}
+	return []string{
 		"-p", tunnelPort,
 		"-l", a.proj.ID,
 		"-o", "PreferredAuthentications=password",
 		"-o", "NumberOfPasswordPrompts=1",
-		"-o", "UserKnownHostsFile="+a.knownHosts,
-		"-o", "GlobalKnownHostsFile="+os.DevNull,
+		"-o", "UserKnownHostsFile=" + a.knownHosts,
+		"-o", "GlobalKnownHostsFile=" + os.DevNull,
 		"-o", "StrictHostKeyChecking=yes",
-		"-R", a.label+":80:"+a.forward,
+		"-R", remote,
 		"-o", "ExitOnForwardFailure=yes",
 		// 鍵なしの公開サーバー: 手元の鍵・エージェントは使わない(誤った鍵で切断されるのを防ぐ)
 		"-o", "PubkeyAuthentication=no",
@@ -384,7 +395,15 @@ func session(ctx context.Context, a sessionArgs) (connected bool, err error) {
 		"-o", "ServerAliveCountMax=3",
 		"-o", "ConnectTimeout=15",
 		tunnelHost,
-	)
+	}
+}
+
+// tcpPortRe は sish が案内する公開アドレス(<ホスト>:<ポート>)を拾う
+var tcpPortRe = regexp.MustCompile(regexp.QuoteMeta(tunnelHost) + `:(\d{1,5})\b`)
+
+// session は ssh を1回起動し、切れるまで待つ。URL が確立したら connected=true を返す。
+func session(ctx context.Context, a sessionArgs) (connected bool, err error) {
+	cmd := exec.CommandContext(ctx, "ssh", sshArgs(a)...)
 	exe, _ := os.Executable()
 	cmd.Env = append(os.Environ(),
 		"SSH_ASKPASS="+exe,
@@ -411,28 +430,72 @@ func session(ctx context.Context, a sessionArgs) (connected bool, err error) {
 		fail(fmt.Errorf("sshの起動に失敗しました(sshコマンドがPATHに無い可能性があります): %w", serr))
 	}
 
+	// 確立の通知は、出力を読むループとタイマー(TCP のみ)の両方から呼ばれるので、1回だけ・排他で実行する
+	var mu sync.Mutex
 	printed := false
+	announce := func(url string) bool {
+		mu.Lock()
+		defer mu.Unlock()
+		if printed {
+			return false
+		}
+		printed = true
+		sp.stop()
+		a.metrics.setConnected(true, !a.first)
+		if a.first {
+			printBanner(url, a.target, a.extra)
+			rec := tunnelRecord{URL: url, Target: a.target, Name: a.label, Dir: a.dir, Temp: a.temp, ID: a.proj.ID, Replica: a.replica}
+			if a.tcpPort > 0 {
+				rec.Kind = "tcp"
+			}
+			registerTunnel(rec)
+		} else {
+			out(fmt.Sprintf("  %s 再接続しました: %s\n", green("✓"), cyan(url)))
+		}
+		return true
+	}
+	isPrinted := func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return printed
+	}
+
+	tcpURL := ""
+	if a.tcpPort > 0 {
+		tcpURL = fmt.Sprintf("tcp://%s:%d", tunnelHost, a.tcpPort)
+		t := time.AfterFunc(tcpEstablishWait, func() { announce(tcpURL) })
+		defer t.Stop()
+	}
+
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := sanitize(scanner.Text())
 		if line == "" {
 			continue
 		}
-		if m := urlLineRe.FindString(line); m != "" && !printed {
-			sp.stop()
-			if a.first {
-				printBanner(m, a.target, a.extra)
-				registerTunnel(m, a.target, a.label, a.dir, a.temp)
-			} else {
-				out(fmt.Sprintf("  %s 再接続しました: %s\n", green("✓"), cyan(m)))
+		if a.tcpPort > 0 {
+			if m := tcpPortRe.FindStringSubmatch(line); m != nil {
+				if m[1] == strconv.Itoa(a.tcpPort) {
+					if announce(tcpURL) {
+						continue
+					}
+				} else if !isPrinted() {
+					sp.stop()
+					out(fmt.Sprintf("  %s サーバーが別のポート(%s)を割り当てました。サーバー側の --bind-random-ports=false が必要です(docs/server.md)\n", yellow("!"), m[1]))
+					if a.first {
+						sp.start()
+					}
+				}
 			}
-			printed = true
-			continue
+		} else if m := urlLineRe.FindString(line); m != "" {
+			if announce(m) {
+				continue
+			}
 		}
 		if !a.verbose && noisyLineRe.MatchString(line) {
 			continue
 		}
-		if !printed {
+		if !isPrinted() {
 			// URL判明前の想定外の行は、接続時の問題を見逃さないようスピナーを止めて出す
 			sp.stop()
 			out(dim(line) + "\n")
@@ -445,7 +508,7 @@ func session(ctx context.Context, a sessionArgs) (connected bool, err error) {
 	}
 	sp.stop()
 	err = cmd.Wait()
-	return printed, err
+	return isPrinted(), err
 }
 
 func printBanner(url, target string, extra []string) {
@@ -499,4 +562,12 @@ func extractConfigFlag() {
 		}
 	}
 	os.Args = rest
+}
+
+// duplicateError は同じ名前のトンネルが起動中のときのエラー文
+func duplicateError(d tunnelRecord, replica bool) error {
+	if replica && !d.Replica {
+		return fmt.Errorf("同じ名前のトンネルが --replica なしで起動中です(PID %d)。一緒に振り分けるには、そちらも --replica で起動し直してください", d.PID)
+	}
+	return fmt.Errorf("同じ名前のトンネルが既に起動中です(PID %d)。同時に複数起動して振り分けるには、すべてに --replica を付けてください(dela list / dela stop %d で確認・停止できます)", d.PID, d.PID)
 }

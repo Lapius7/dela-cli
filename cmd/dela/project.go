@@ -173,6 +173,37 @@ func registerNewID() (projectID, error) {
 	}
 }
 
+// registryTCPPort は (ID, 名前) に割り当てられた TCP の公開ポートをレジストリから取得する(無ければ割り当てる)。
+// 同じ ID・名前なら毎回同じポートが返るので、再接続しても公開アドレスが変わらない。
+func registryTCPPort(p projectID, name string) (int, error) {
+	resp, b, err := registryPost("/tcp", map[string]string{"id": p.ID, "token": p.Token, "name": name})
+	if err != nil {
+		return 0, fmt.Errorf("サーバーに接続できませんでした: %w", err)
+	}
+	return parseTCPPortResponse(resp.StatusCode, b)
+}
+
+func parseTCPPortResponse(status int, body []byte) (int, error) {
+	switch status {
+	case http.StatusOK:
+		var r struct {
+			Port int `json:"port"`
+		}
+		if err := json.Unmarshal(body, &r); err != nil || r.Port < 1 || r.Port > 65535 {
+			return 0, errors.New("サーバーの応答が不正です")
+		}
+		return r.Port, nil
+	case http.StatusUnauthorized:
+		return 0, errors.New("ID または token が正しくありません(dela renew でサブドメインを再発行してください)")
+	case http.StatusTooManyRequests:
+		return 0, errors.New("この ID で使える TCP ポートの数が上限に達しました。使わない名前の dela を整理してください")
+	case http.StatusNotFound:
+		return 0, errors.New("このサーバーは TCP 転送に対応していません")
+	default:
+		return 0, fmt.Errorf("TCP ポートの取得に失敗しました(HTTP %d)", status)
+	}
+}
+
 // 古い ID をサーバーから解放する(失敗しても致命的ではない)
 func releaseID(p projectID) {
 	_, _, _ = registryPost("/release", map[string]string{"id": p.ID, "token": p.Token})

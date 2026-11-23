@@ -20,6 +20,10 @@ type tunnelRecord struct {
 	Name string `json:"name,omitempty"` // --name の値(既定は app)
 	Dir  string `json:"dir,omitempty"`  // .delaconfig のあるフォルダ。--temp のときは空
 	Temp bool   `json:"temp,omitempty"`
+	// 以下は TCP 転送・replica で追加(古い記録には無い)
+	Kind    string `json:"kind,omitempty"`    // "tcp" のとき TCP 転送。空は HTTP
+	ID      string `json:"id,omitempty"`      // このトンネルのプロジェクト ID(同名の重複起動の判定用。token は入れない)
+	Replica bool   `json:"replica,omitempty"` // --replica で起動した
 }
 
 func stateDir() (string, error) {
@@ -44,12 +48,13 @@ func stateFile(pid int) (string, error) {
 
 // registerTunnel/unregisterTunnelはベストエフォート(失敗してもトンネル自体の
 // 動作には影響させない。list/stopが多少不正確になるだけ)。
-func registerTunnel(url, target, name, dir string, temp bool) {
+func registerTunnel(rec tunnelRecord) {
 	path, err := stateFile(os.Getpid())
 	if err != nil {
 		return
 	}
-	rec := tunnelRecord{PID: os.Getpid(), URL: url, Target: target, StartedAt: time.Now(), Name: name, Dir: dir, Temp: temp}
+	rec.PID = os.Getpid()
+	rec.StartedAt = time.Now()
 	data, err := json.Marshal(rec)
 	if err != nil {
 		return
@@ -107,4 +112,16 @@ func removeStateFileFor(pid int) {
 		return
 	}
 	_ = os.Remove(path)
+}
+
+// findDuplicate は同じプロジェクト ID・同じ名前・同じ種類(HTTP/TCP)で、既に起動中のトンネルを探す。
+// ID を持たない古い記録は判定に使わない。
+func findDuplicate(recs []tunnelRecord, id, name, kind string) (tunnelRecord, bool) {
+	for _, r := range recs {
+		if r.ID == "" || r.ID != id || r.Name != name || r.Kind != kind || r.PID == os.Getpid() {
+			continue
+		}
+		return r, true
+	}
+	return tunnelRecord{}, false
 }

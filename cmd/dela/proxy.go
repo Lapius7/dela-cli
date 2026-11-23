@@ -197,13 +197,14 @@ type localProxy struct {
 	useAuth bool
 	inspect bool
 	store   *requestStore
+	metrics *metrics
 	srv     *http.Server
 	addr    string
 }
 
-func startProxy(target string, o options) (*localProxy, error) {
+func startProxy(target string, o options, m *metrics) (*localProxy, error) {
 	u := &url.URL{Scheme: "http", Host: target}
-	p := &localProxy{target: target, inspect: o.inspect, store: &requestStore{}}
+	p := &localProxy{target: target, inspect: o.inspect, store: &requestStore{}, metrics: m}
 	if o.auth != "" {
 		p.useAuth = true
 		p.authSum = sha256.Sum256([]byte(o.auth))
@@ -284,6 +285,7 @@ func (p *localProxy) finish(rec *capturedReq, rw *recWriter, cb *capBody, start 
 	rec.Status = rw.status
 	rec.DurationMs = time.Since(start).Milliseconds()
 	rec.RespSize = rw.size
+	p.metrics.observe(rec.Status, time.Since(start))
 	rec.RespHeaders = redact(rw.hdr)
 	rec.RespBody = rw.buf.Bytes()
 	rec.RespTrunc = rw.trunc
