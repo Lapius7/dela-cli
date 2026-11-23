@@ -55,7 +55,7 @@ The panel is colored. Output has no color when `NO_COLOR` is set or stdout is no
 ## Requirements
 
 - `ssh` (8.4 or later) on your system. Windows 10/11, macOS, and Linux include it.
-- Only HTTP(S) is supported (no TCP forwarding). The server limits concurrent connections and connection rate per IP, and closes a connection after 1 hour without traffic.
+- HTTP(S) is the default; `dela tcp <port>` publishes any TCP service (see [TCP forwarding](#tcp-forwarding)). The server limits concurrent connections and connection rate per IP, and closes a connection after 1 hour without traffic.
 - No account and no SSH key are needed (anyone can use the public tunnel). On the first run the server issues a subdomain, and dela saves it to `.delaconfig`. dela does not use your SSH keys, `~/.ssh/config`, or ssh-agent.
 - The server's host key is pinned in the binary, so there is no host-key prompt. If the key does not match, dela refuses to connect. Fingerprint:
   ```
@@ -105,6 +105,7 @@ Each script runs `go install github.com/lapius7/dela-cli/cmd/dela@latest` with `
 dela <port>          e.g. dela 3000        (publishes localhost:3000)
 dela <host:port>     e.g. dela 127.0.0.1:8080
 dela <port> -v       also show the connection log
+dela tcp <port>      e.g. dela tcp 22      (publishes SSH/RDP/any TCP, see below)
 dela --help
 ```
 
@@ -125,8 +126,28 @@ dela 3000 --temp          temporary mode (below)
 
 - `.delaconfig` contains a secret token. In a git repository dela appends it to `.gitignore`. Do not share it or commit it.
 - The ID cannot be used by other people (the token authenticates it). If you delete `.delaconfig`, the next run issues a new ID, and the old ID is discarded after 90 days unused.
-- Two tunnels with the same name (`app`, `api`) cannot run at the same time.
+- Two tunnels with the same name (`app`, `api`) cannot run at the same time, unless you start all of them with `--replica` ([Replicas](#replicas-load-balancing)).
 - To use the same URL on another PC, copy `.delaconfig` into that PC's project.
+
+### TCP forwarding
+
+```
+dela tcp 22                  → tcp://try.lapius7.si:2xxxx   (SSH)
+dela tcp 3389 --name rdp     (RDP; one name per service)
+```
+
+`dela tcp <port>` (or `<host:port>`) forwards raw TCP with `ssh -R <public-port>:<target>`. dela asks the registry for a public port, and the same project ID and `--name` always get the same port, so the address survives reconnects and restarts. Connect with `ssh -p 2xxxx user@try.lapius7.si`. `.delaconfig`, `--temp`, `--config`, `--name`, auto reconnect, `--metrics-port`, `dela list` / `dela stop` work as for HTTP; `--auth` and `--inspect` are HTTP-only and are rejected. A project can hold up to 5 TCP names.
+
+> [!WARNING]
+> Anyone can reach a public TCP port. Protect the service itself (keys, passwords, firewall). The server side needs extra settings: see [docs/server.md](docs/server.md).
+
+### Replicas (load balancing)
+
+```
+dela 3000 --replica     # run this in two terminals (or on two PCs sharing the same .delaconfig)
+```
+
+By default dela refuses to start a second tunnel with the same project ID and name. With `--replica` on **every** process, they connect at the same time and the server (sish `--http-load-balancer` / `--tcp-load-balancer`) spreads requests across them. `--replica` only lifts dela's own check; the balancing itself is a server setting, and it cannot be used with `--temp` (each temporary run has its own ID). See [docs/server.md](docs/server.md).
 
 ### Auto reconnect
 
@@ -148,6 +169,28 @@ DELA_AUTH=demo:s3cret dela 3000      # environment variable (keeps it out of she
 ```
 
 The public URL asks for Basic authentication. The local `dela` checks it, so the password is not sent to the server, and a request that fails never reaches your local server. It works together with `--inspect`. The value is not saved to `.delaconfig`, so pass it on every start.
+
+### Metrics (`--metrics-port`)
+
+```
+dela 3000 --metrics-port 9100      # http://127.0.0.1:9100/metrics
+```
+
+Serves Prometheus text format on `127.0.0.1` only (never on other interfaces). It starts the local proxy, which counts requests: `dela_requests_total`, `dela_requests_by_status_total{code}`, `dela_request_duration_seconds` (histogram), plus `dela_tunnel_connected` (1/0) and `dela_reconnects_total` (re-connections after the first one). With `dela tcp`, only the connection metrics are meaningful.
+
+### Run as a service and update
+
+```
+dela service install 3000 --name api     # start at login, restart on exit
+dela service install tcp 22 --name ssh
+dela service status [tcp] [--name api]
+dela service uninstall [tcp] [--name api]
+dela update                              # update from GitHub Releases (--check only checks)
+```
+
+`install` takes the same arguments as running dela, and needs an existing `.delaconfig` (run dela once first) or `--config <path>`; the absolute path is written into the service so the working directory does not matter. Linux uses a systemd user unit (`~/.config/systemd/user/dela-<name>.service`; run `loginctl enable-linger $USER` to keep it after logout), macOS a LaunchAgent, and Windows a Task Scheduler task (`dela-<name>`, at logon). No administrator rights are needed. `--temp` is not allowed.
+
+`dela update` downloads the release archive for your OS and CPU and replaces the running binary only if its SHA-256 matches `checksums.txt` attached to the release (releases without it are refused). It protects against corrupted or truncated downloads, not against a compromised release. Installs from pnpm are not self-updated (use `pnpm add -g @lapius/dela-cli`), and a `go install` build always reports its built-in version, so the comparison is unreliable there.
 
 ### Manage tunnels
 
@@ -177,13 +220,17 @@ The code lives in `cmd/dela/` and uses only the Go standard library, with no ext
 | `state.go` | Local state files for `dela list` / `stop` (`~/.dela/state/`) |
 | `project.go` | Reading and writing `.delaconfig`, issuing and releasing IDs on the server, `dela renew` / `info`, handling the ssh password prompt (SSH_ASKPASS) |
 | `proxy.go`, `inspect.html` | Local reverse proxy for `--auth` and `--inspect`, request recording, viewer page |
+| `cli.go` | Argument parsing shared by `dela <port>`, `dela tcp` and `dela service install` |
+| `metrics.go` | `--metrics-port`: Prometheus `/metrics` on 127.0.0.1 |
+| `service.go` | `dela service`: systemd / launchd / Task Scheduler definitions |
+| `update.go` | `dela update`: download, checksum check, self-replace |
 | `commands.go` | `list`, `stop`, `version` |
 | `procalive_unix.go`, `procalive_windows.go` | Process liveness check per OS |
 
-`server/registry.py` is a small HTTP service that issues IDs (Python standard library and SQLite). It uses sish's `--authentication-password-request-url` and `--append-user-to-subdomain`: the username is the ID, the password is the token, and the public host name becomes `<name>-<ID>.<domain>`. Tokens are stored as SHA-256.
+`server/registry.py` is a small HTTP service that issues IDs (Python standard library and SQLite). It uses sish's `--authentication-password-request-url` and `--append-user-to-subdomain`: the username is the ID, the password is the token, and the public host name becomes `<name>-<ID>.<domain>`. Tokens are stored as SHA-256. `POST /v1/tcp` hands out one stable public TCP port per project ID and name (default range 20000-29999, 5 names per ID). Server-side settings for TCP and load balancing are in [docs/server.md](docs/server.md).
 
 > [!NOTE]
-> Unverified: this rewrite did not run dela against the live server, and the pinned host-key fingerprint and the 90-day ID expiry are taken from the existing README and code, not retested.
+> Unverified: dela was not run against the live server, and the pinned host-key fingerprint and the 90-day ID expiry are taken from the existing README and code, not retested. The TCP forwarding, `--replica` load balancing, the new `/v1/tcp` registry route and the sish settings in `docs/server.md` are covered by unit tests and written from sish's documentation only; they were not tried against a running sish or the production server. `dela service` was tested by unit tests of the generated unit, plist and task, not by installing it on macOS or Windows. `dela update` was tested against a local fake release server, not GitHub.
 
 ## License
 
